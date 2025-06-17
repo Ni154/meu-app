@@ -35,22 +35,15 @@ CREATE TABLE IF NOT EXISTS clientes (
     telefone TEXT
 )""")
 
-# Adiciona coluna unidade caso não exista
-try:
-    cursor.execute("ALTER TABLE produtos ADD COLUMN unidade TEXT")
-    conn.commit()
-except:
-    pass
-
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS produtos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nome TEXT,
     preco REAL,
     estoque INTEGER,
+    unidade TEXT,
     categoria TEXT,
-    data TEXT,
-    unidade TEXT
+    data TEXT
 )""")
 
 cursor.execute("""
@@ -65,7 +58,6 @@ CREATE TABLE IF NOT EXISTS vendas (
 
 conn.commit()
 
-# Função para login
 if "logado" not in st.session_state:
     st.session_state.logado = False
 
@@ -82,11 +74,9 @@ if not st.session_state.logado:
             st.error("Usuário ou senha incorretos")
             st.stop()
 else:
-    # Tela inicial após login
     st.sidebar.title("NS Sistemas")
     menu = st.sidebar.radio("Menu", ["Início", "Empresa", "Clientes", "Produtos", "Vendas", "Cancelar Venda", "Relatórios"])
 
-    # Exibe dados da empresa
     cursor.execute("SELECT nome, cnpj FROM empresa ORDER BY id DESC LIMIT 1")
     dados_empresa = cursor.fetchone()
 
@@ -96,28 +86,37 @@ else:
     else:
         st.warning("Nenhuma empresa cadastrada.")
 
-    # Cadastro da empresa
     if menu == "Empresa":
         st.subheader("Cadastrar Empresa")
         nome_empresa = st.text_input("Nome da Empresa")
         cnpj_empresa = st.text_input("CNPJ")
         if st.button("Salvar Empresa"):
-            cursor.execute("INSERT INTO empresa (nome, cnpj) VALUES (?, ?)", (nome_empresa, cnpj_empresa))
-            conn.commit()
-            st.success("Empresa cadastrada com sucesso!")
+            if nome_empresa and cnpj_empresa:
+                try:
+                    cursor.execute("INSERT INTO empresa (nome, cnpj) VALUES (?, ?)", (nome_empresa, cnpj_empresa))
+                    conn.commit()
+                    st.success("Empresa cadastrada com sucesso!")
+                except Exception as e:
+                    st.error(f"Erro ao cadastrar empresa: {e}")
+            else:
+                st.warning("Preencha todos os campos.")
 
-    # Cadastro de clientes
     elif menu == "Clientes":
         st.subheader("Cadastro de Cliente")
         nome = st.text_input("Nome")
         cpf = st.text_input("CPF")
         telefone = st.text_input("Telefone")
         if st.button("Cadastrar Cliente"):
-            cursor.execute("INSERT INTO clientes (nome, cpf, telefone) VALUES (?, ?, ?)", (nome, cpf, telefone))
-            conn.commit()
-            st.success("Cliente cadastrado com sucesso!")
+            if nome:
+                try:
+                    cursor.execute("INSERT INTO clientes (nome, cpf, telefone) VALUES (?, ?, ?)", (nome, cpf, telefone))
+                    conn.commit()
+                    st.success("Cliente cadastrado com sucesso")
+                except Exception as e:
+                    st.error(f"Erro ao cadastrar cliente: {e}")
+            else:
+                st.warning("Informe o nome do cliente")
 
-    # Cadastro de produtos
     elif menu == "Produtos":
         st.subheader("Cadastro de Produtos")
         nome = st.text_input("Nome do Produto")
@@ -127,26 +126,32 @@ else:
         categoria = st.text_input("Categoria")
         data = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if st.button("Cadastrar Produto"):
-            cursor.execute("INSERT INTO produtos (nome, preco, estoque, unidade, categoria, data) VALUES (?, ?, ?, ?, ?, ?)",
-                           (nome, preco, estoque, unidade, categoria, data))
-            conn.commit()
-            st.success("Produto cadastrado com sucesso!")
+            if nome and preco >= 0:
+                try:
+                    cursor.execute("INSERT INTO produtos (nome, preco, estoque, unidade, categoria, data) VALUES (?, ?, ?, ?, ?, ?)",
+                        (nome, preco, estoque, unidade, categoria, data))
+                    conn.commit()
+                    st.success("Produto cadastrado com sucesso")
+                except Exception as e:
+                    st.error(f"Erro ao cadastrar produto: {e}")
+            else:
+                st.warning("Preencha os campos obrigatórios.")
 
         st.subheader("Produtos Cadastrados")
-        produtos = cursor.execute("SELECT nome, preco, estoque, unidade, categoria FROM produtos").fetchall()
+        produtos = cursor.execute("SELECT nome, preco, estoque, categoria FROM produtos").fetchall()
         st.dataframe(produtos)
 
-    # Tela de vendas
     elif menu == "Vendas":
         st.subheader("Registrar Venda")
         produtos = [row[0] for row in cursor.execute("SELECT nome FROM produtos").fetchall()]
         clientes = [row[0] for row in cursor.execute("SELECT nome FROM clientes").fetchall()]
+        formas_pagamento = ["Dinheiro", "Cartão", "PIX"]
 
         if produtos and clientes:
             produto = st.selectbox("Produto", produtos)
             cliente = st.selectbox("Cliente", clientes)
+            forma_pagamento = st.selectbox("Forma de Pagamento", formas_pagamento)
             quantidade = st.number_input("Quantidade", min_value=1, step=1)
-            forma_pagamento = st.selectbox("Forma de Pagamento", ["Dinheiro", "Cartão", "Pix"])
 
             if st.button("Finalizar Venda"):
                 produto_info = cursor.execute("SELECT preco, estoque FROM produtos WHERE nome=?", (produto,)).fetchone()
@@ -157,54 +162,42 @@ else:
                     total = quantidade * preco
                     data_venda = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-                    cursor.execute("INSERT INTO vendas (data, produto, cliente, quantidade, total) VALUES (?, ?, ?, ?, ?)",
-                                   (data_venda, produto, cliente, quantidade, total))
-                    cursor.execute("UPDATE produtos SET estoque=estoque-? WHERE nome=?", (quantidade, produto))
-                    conn.commit()
+                    try:
+                        cursor.execute("INSERT INTO vendas (data, produto, cliente, quantidade, total) VALUES (?, ?, ?, ?, ?)",
+                            (data_venda, produto, cliente, quantidade, total))
+                        cursor.execute("UPDATE produtos SET estoque=estoque-? WHERE nome=?", (quantidade, produto))
+                        conn.commit()
 
-                    buffer = io.BytesIO()
-                    c = canvas.Canvas(buffer)
-                    c.drawString(100, 800, "NS SISTEMAS - COMPROVANTE DE VENDA")
-                    c.drawString(100, 780, f"Data: {data_venda}")
-                    c.drawString(100, 760, f"Cliente: {cliente}")
-                    c.drawString(100, 740, f"Produto: {produto}")
-                    c.drawString(100, 720, f"Quantidade: {quantidade}")
-                    c.drawString(100, 700, f"Total: R$ {total:.2f}")
-                    c.drawString(100, 680, f"Pagamento: {forma_pagamento}")
-                    c.save()
+                        buffer = io.BytesIO()
+                        c = canvas.Canvas(buffer)
+                        c.drawString(100, 800, "NS SISTEMAS - COMPROVANTE DE VENDA")
+                        c.drawString(100, 780, f"Data: {data_venda}")
+                        c.drawString(100, 760, f"Cliente: {cliente}")
+                        c.drawString(100, 740, f"Produto: {produto}")
+                        c.drawString(100, 720, f"Quantidade: {quantidade}")
+                        c.drawString(100, 700, f"Forma de Pagamento: {forma_pagamento}")
+                        c.drawString(100, 680, f"Total: R$ {total:.2f}")
+                        c.save()
 
-                    st.download_button("Baixar Comprovante em PDF", buffer.getvalue(), file_name="comprovante.pdf")
-                    st.success("Venda registrada com sucesso!")
+                        st.download_button("Baixar Comprovante em PDF", buffer.getvalue(), file_name="comprovante.pdf")
+                        st.success("Venda registrada com sucesso")
+                    except Exception as e:
+                        st.error(f"Erro ao registrar venda: {e}")
         else:
             st.info("Cadastre produtos e clientes antes de vender")
 
-    # Cancelar venda / histórico com filtro
     elif menu == "Cancelar Venda":
         st.subheader("Cancelar Venda")
         data_inicio = st.date_input("Data Inicial")
         data_fim = st.date_input("Data Final")
 
         vendas = cursor.execute("SELECT id, data, produto, cliente, quantidade, total FROM vendas").fetchall()
-        df_vendas = pd.DataFrame(vendas, columns=["ID", "Data", "Produto", "Cliente", "Quantidade", "Total"])
-        df_vendas["Data"] = pd.to_datetime(df_vendas["Data"])
+        vendas_filtradas = [v for v in vendas if data_inicio.strftime("%Y-%m-%d") <= v[1][:10] <= data_fim.strftime("%Y-%m-%d")]
 
-        df_filtrado = df_vendas[(df_vendas["Data"] >= pd.to_datetime(data_inicio)) & (df_vendas["Data"] <= pd.to_datetime(data_fim))]
+        st.write("### Vendas no Período")
+        df_cancelar = pd.DataFrame(vendas_filtradas, columns=["ID", "Data", "Produto", "Cliente", "Quantidade", "Total"])
+        st.dataframe(df_cancelar)
 
-        st.dataframe(df_filtrado)
-
-        venda_id = st.number_input("ID da Venda para Cancelar", step=1)
-        if st.button("Cancelar Venda"):
-            venda = cursor.execute("SELECT produto, quantidade FROM vendas WHERE id=?", (venda_id,)).fetchone()
-            if venda:
-                produto, quantidade = venda
-                cursor.execute("DELETE FROM vendas WHERE id=?", (venda_id,))
-                cursor.execute("UPDATE produtos SET estoque=estoque+? WHERE nome=?", (quantidade, produto))
-                conn.commit()
-                st.success("Venda cancelada com sucesso!")
-            else:
-                st.warning("ID de venda não encontrado")
-
-    # Relatórios com gráficos e exportação em PDF
     elif menu == "Relatórios":
         st.subheader("Relatório de Vendas")
         data_inicio = st.date_input("Data inicial")
@@ -219,14 +212,12 @@ else:
         total = sum([v[4] for v in df])
         st.success(f"Total vendido no período: R$ {total:.2f}")
 
-        # Gráfico de vendas
         df_vendas = pd.DataFrame(df, columns=["Data", "Produto", "Cliente", "Quantidade", "Total"])
         df_vendas["Data"] = pd.to_datetime(df_vendas["Data"])
         if not df_vendas.empty:
             grafico = px.bar(df_vendas, x="Data", y="Total", color="Produto", title="Vendas por Produto")
             st.plotly_chart(grafico)
 
-            # Exportar PDF
             buffer_pdf = io.BytesIO()
             pdf = canvas.Canvas(buffer_pdf, pagesize=A4)
             pdf.drawString(100, 800, "Relatório de Vendas")
