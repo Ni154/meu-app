@@ -1,4 +1,3 @@
-# sistema_pdv_streamlit.py
 import streamlit as st
 import sqlite3
 from datetime import datetime
@@ -9,132 +8,127 @@ import os
 import pandas as pd
 import plotly.express as px
 
-# Conexão com o banco de dados
+# Inicializa banco de dados
 conn = sqlite3.connect("sistema.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# Criação das tabelas (caso não existam)
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS empresa (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT NOT NULL,
-    cnpj TEXT NOT NULL
-)""")
+# Funções de páginas
+def pagina_inicio():
+    st.subheader("Bem-vindo ao sistema de vendas NS Sistemas")
+    st.write("Utilize o menu lateral para navegar entre as funcionalidades.")
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS usuarios (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    usuario TEXT NOT NULL,
-    senha TEXT NOT NULL
-)""")
+def pagina_empresa():
+    st.subheader("Cadastrar Empresa")
+    nome_empresa = st.text_input("Nome da Empresa")
+    cnpj_empresa = st.text_input("CNPJ")
+    if st.button("Salvar Empresa"):
+        if nome_empresa and cnpj_empresa:
+            try:
+                cursor.execute("INSERT INTO empresa (nome, cnpj) VALUES (?, ?)", (nome_empresa, cnpj_empresa))
+                conn.commit()
+                st.success("Empresa cadastrada com sucesso!")
+            except Exception as e:
+                st.error(f"Erro ao cadastrar empresa: {e}")
+        else:
+            st.warning("Preencha todos os campos.")
 
-cursor.execute("SELECT COUNT(*) FROM usuarios")
-if cursor.fetchone()[0] == 0:
-    cursor.execute("INSERT INTO usuarios (usuario, senha) VALUES (?, ?)", ("admin", "1234"))
-    conn.commit()
+def pagina_clientes():
+    st.subheader("Cadastro de Cliente")
+    nome = st.text_input("Nome")
+    cpf = st.text_input("CPF")
+    telefone = st.text_input("Telefone")
+    endereco = st.text_area("Endereço (Rua, Número, Apto...)")
+    if st.button("Cadastrar Cliente"):
+        if nome:
+            try:
+                cursor.execute("INSERT INTO clientes (nome, cpf, telefone, endereco) VALUES (?, ?, ?, ?)", (nome, cpf, telefone, endereco))
+                conn.commit()
+                st.success("Cliente cadastrado com sucesso")
+            except Exception as e:
+                st.error(f"Erro ao cadastrar cliente: {e}")
+        else:
+            st.warning("Informe o nome do cliente")
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS clientes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT NOT NULL,
-    cpf TEXT,
-    telefone TEXT,
-    endereco TEXT
-)""")
+def pagina_produtos():
+    st.subheader("Cadastro de Produtos")
+    nome = st.text_input("Nome do Produto")
+    preco = st.number_input("Preço", step=0.01)
+    estoque = st.number_input("Estoque", step=1)
+    unidade = st.selectbox("Unidade", ["Unidade", "Peso"])
+    categoria = st.text_input("Categoria")
+    data = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if st.button("Cadastrar Produto"):
+        if nome and preco >= 0:
+            try:
+                cursor.execute("INSERT INTO produtos (nome, preco, estoque, unidade, categoria, data) VALUES (?, ?, ?, ?, ?, ?)",
+                    (nome, preco, estoque, unidade, categoria, data))
+                conn.commit()
+                st.success("Produto cadastrado com sucesso")
+            except Exception as e:
+                st.error(f"Erro ao cadastrar produto: {e}")
+        else:
+            st.warning("Preencha os campos obrigatórios.")
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS produtos (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT,
-    preco REAL,
-    estoque INTEGER,
-    unidade TEXT,
-    categoria TEXT,
-    data TEXT
-)""")
+# Configurações iniciais da página
+st.set_page_config(layout="wide")
+st.markdown(
+    """
+    <style>
+    .stButton>button {
+        background-color: #FFA500;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 16px;
+        margin-bottom: 8px;
+    }
+    .stButton>button:hover {
+        background-color: #FF8C00;
+    }
+    .sidebar-content {
+        background-image: url('https://img.freepik.com/vetores-gratis/fundo-de-grade-azul-gradiente_23-2149333607.jpg');
+        background-size: cover;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS vendas (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    data TEXT,
-    produto TEXT,
-    cliente TEXT,
-    quantidade INTEGER,
-    total REAL
-)""")
-conn.commit()
-
-# Função para adicionar imagem de fundo
-def adicionar_plano_de_fundo(imagem_url):
-    st.markdown(f"""
-        <style>
-        .stApp {{
-            background-image: url('{imagem_url}');
-            background-size: cover;
-            background-position: center;
-            background-attachment: fixed;
-        }}
-        .stButton > button {{
-            background-color: orange;
-            color: white;
-            border-radius: 10px;
-            padding: 0.5em 1em;
-            border: none;
-        }}
-        </style>
-    """, unsafe_allow_html=True)
-
-# Estado inicial
-if "logado" not in st.session_state:
-    st.session_state.logado = False
 if "pagina" not in st.session_state:
     st.session_state.pagina = "Início"
 if "logo" not in st.session_state:
     st.session_state.logo = None
 
-# Login
-if not st.session_state.logado:
-    st.title("NS Sistemas - Login")
-    usuario = st.text_input("Usuário")
-    senha = st.text_input("Senha", type="password")
-    if st.button("Entrar"):
-        cursor.execute("SELECT * FROM usuarios WHERE usuario=? AND senha=?", (usuario, senha))
-        if cursor.fetchone():
-            st.session_state.logado = True
-            st.rerun()
-        else:
-            st.error("Usuário ou senha incorretos")
-            st.stop()
-
-# Se logado, mostra o sistema
-else:
-    # Fundo personalizado (pode usar uma URL de imagem)
-    adicionar_plano_de_fundo("https://i.imgur.com/fd7hJ8w.jpg")  # Substitua pela sua imagem
-
-    with st.sidebar:
-        st.title("NS Sistemas")
-        st.session_state.logo = st.file_uploader("Logo da empresa", type=["png", "jpg", "jpeg"])
-        if st.button("Início"): st.session_state.pagina = "Início"
-        if st.button("Empresa"): st.session_state.pagina = "Empresa"
-        if st.button("Clientes"): st.session_state.pagina = "Clientes"
-        if st.button("Produtos"): st.session_state.pagina = "Produtos"
-        if st.button("Vendas"): st.session_state.pagina = "Vendas"
-        if st.button("Cancelar Venda"): st.session_state.pagina = "Cancelar Venda"
-        if st.button("Relatórios"): st.session_state.pagina = "Relatórios"
-
+# Sidebar
+with st.sidebar:
+    st.title("NS Sistemas")
+    st.session_state.logo = st.file_uploader("Logo da empresa", type=["png", "jpg", "jpeg"])
     if st.session_state.logo:
-        try:
-            st.image(st.session_state.logo, width=250)
-        except:
-            st.warning("Erro ao carregar a logo.")
+        st.image(st.session_state.logo, width=250)
+    if st.button("Início"):
+        st.session_state.pagina = "Início"
+    if st.button("Empresa"):
+        st.session_state.pagina = "Empresa"
+    if st.button("Clientes"):
+        st.session_state.pagina = "Clientes"
+    if st.button("Produtos"):
+        st.session_state.pagina = "Produtos"
+    if st.button("Vendas"):
+        st.session_state.pagina = "Vendas"
+    if st.button("Cancelar Venda"):
+        st.session_state.pagina = "Cancelar Venda"
+    if st.button("Relatórios"):
+        st.session_state.pagina = "Relatórios"
 
-    # Exibe dados da empresa
-    cursor.execute("SELECT nome, cnpj FROM empresa ORDER BY id DESC LIMIT 1")
-    dados_empresa = cursor.fetchone()
-    if dados_empresa:
-        st.markdown(f"### Empresa: {dados_empresa[0]}")
-        st.markdown(f"**CNPJ:** {dados_empresa[1]}")
-    else:
-        st.warning("Nenhuma empresa cadastrada.")
-
-
+# Exibição da página selecionada
+pagina = st.session_state.pagina
+if pagina == "Início":
+    pagina_inicio()
+elif pagina == "Empresa":
+    pagina_empresa()
+elif pagina == "Clientes":
+    pagina_clientes()
+elif pagina == "Produtos":
+    pagina_produtos()
+# Continuar implementando as demais páginas com base nas funções originais
