@@ -32,9 +32,15 @@ CREATE TABLE IF NOT EXISTS clientes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nome TEXT NOT NULL,
     cpf TEXT,
-    telefone TEXT,
-    endereco TEXT
+    telefone TEXT
 )""")
+
+# Adiciona coluna unidade caso não exista
+try:
+    cursor.execute("ALTER TABLE produtos ADD COLUMN unidade TEXT")
+    conn.commit()
+except:
+    pass
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS produtos (
@@ -42,9 +48,9 @@ CREATE TABLE IF NOT EXISTS produtos (
     nome TEXT,
     preco REAL,
     estoque INTEGER,
-    unidade TEXT,
     categoria TEXT,
-    data TEXT
+    data TEXT,
+    unidade TEXT
 )""")
 
 cursor.execute("""
@@ -54,12 +60,12 @@ CREATE TABLE IF NOT EXISTS vendas (
     produto TEXT,
     cliente TEXT,
     quantidade INTEGER,
-    total REAL,
-    forma_pagamento TEXT
+    total REAL
 )""")
 
 conn.commit()
 
+# Função para login
 if "logado" not in st.session_state:
     st.session_state.logado = False
 
@@ -71,14 +77,16 @@ if not st.session_state.logado:
         cursor.execute("SELECT * FROM usuarios WHERE usuario=? AND senha=?", (usuario, senha))
         if cursor.fetchone():
             st.session_state.logado = True
-            st.rerun()
+            st.experimental_rerun()
         else:
             st.error("Usuário ou senha incorretos")
             st.stop()
 else:
+    # Tela inicial após login
     st.sidebar.title("NS Sistemas")
-    menu = st.sidebar.radio("Menu", ["Início", "Empresa", "Clientes", "Produtos", "Vendas", "Relatórios"])
+    menu = st.sidebar.radio("Menu", ["Início", "Empresa", "Clientes", "Produtos", "Vendas", "Cancelar Venda", "Relatórios"])
 
+    # Exibe dados da empresa
     cursor.execute("SELECT nome, cnpj FROM empresa ORDER BY id DESC LIMIT 1")
     dados_empresa = cursor.fetchone()
 
@@ -88,6 +96,7 @@ else:
     else:
         st.warning("Nenhuma empresa cadastrada.")
 
+    # Cadastro da empresa
     if menu == "Empresa":
         st.subheader("Cadastrar Empresa")
         nome_empresa = st.text_input("Nome da Empresa")
@@ -95,23 +104,24 @@ else:
         if st.button("Salvar Empresa"):
             cursor.execute("INSERT INTO empresa (nome, cnpj) VALUES (?, ?)", (nome_empresa, cnpj_empresa))
             conn.commit()
-            st.success("Empresa cadastrada!")
+            st.success("Empresa cadastrada com sucesso!")
 
+    # Cadastro de clientes
     elif menu == "Clientes":
         st.subheader("Cadastro de Cliente")
         nome = st.text_input("Nome")
         cpf = st.text_input("CPF")
         telefone = st.text_input("Telefone")
-        endereco = st.text_input("Endereço")
         if st.button("Cadastrar Cliente"):
-            cursor.execute("INSERT INTO clientes (nome, cpf, telefone, endereco) VALUES (?, ?, ?, ?)", (nome, cpf, telefone, endereco))
+            cursor.execute("INSERT INTO clientes (nome, cpf, telefone) VALUES (?, ?, ?)", (nome, cpf, telefone))
             conn.commit()
-            st.success("Cliente cadastrado com sucesso")
+            st.success("Cliente cadastrado com sucesso!")
 
+    # Cadastro de produtos
     elif menu == "Produtos":
         st.subheader("Cadastro de Produtos")
         nome = st.text_input("Nome do Produto")
-        preco = st.number_input("Valor Unitário", step=0.01)
+        preco = st.number_input("Preço", step=0.01)
         estoque = st.number_input("Estoque", step=1)
         unidade = st.selectbox("Unidade", ["Unidade", "Peso"])
         categoria = st.text_input("Categoria")
@@ -120,35 +130,35 @@ else:
             cursor.execute("INSERT INTO produtos (nome, preco, estoque, unidade, categoria, data) VALUES (?, ?, ?, ?, ?, ?)",
                            (nome, preco, estoque, unidade, categoria, data))
             conn.commit()
-            st.success("Produto cadastrado com sucesso")
+            st.success("Produto cadastrado com sucesso!")
 
         st.subheader("Produtos Cadastrados")
         produtos = cursor.execute("SELECT nome, preco, estoque, unidade, categoria FROM produtos").fetchall()
         st.dataframe(produtos)
 
+    # Tela de vendas
     elif menu == "Vendas":
         st.subheader("Registrar Venda")
-        produtos = cursor.execute("SELECT nome FROM produtos").fetchall()
-        clientes = cursor.execute("SELECT nome FROM clientes").fetchall()
+        produtos = [row[0] for row in cursor.execute("SELECT nome FROM produtos").fetchall()]
+        clientes = [row[0] for row in cursor.execute("SELECT nome FROM clientes").fetchall()]
 
         if produtos and clientes:
-            produto = st.selectbox("Produto", [p[0] for p in produtos])
-            cliente = st.selectbox("Cliente", [c[0] for c in clientes])
-            forma_pagamento = st.selectbox("Forma de Pagamento", ["Dinheiro", "Cartão", "Pix"])
-            produto_info = cursor.execute("SELECT preco, estoque FROM produtos WHERE nome=?", (produto,)).fetchone()
-            preco, estoque = produto_info
-            st.write(f"Valor Unitário: R$ {preco:.2f}")
+            produto = st.selectbox("Produto", produtos)
+            cliente = st.selectbox("Cliente", clientes)
             quantidade = st.number_input("Quantidade", min_value=1, step=1)
+            forma_pagamento = st.selectbox("Forma de Pagamento", ["Dinheiro", "Cartão", "Pix"])
 
             if st.button("Finalizar Venda"):
+                produto_info = cursor.execute("SELECT preco, estoque FROM produtos WHERE nome=?", (produto,)).fetchone()
+                preco, estoque = produto_info
                 if quantidade > estoque:
                     st.warning("Estoque insuficiente")
                 else:
                     total = quantidade * preco
                     data_venda = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-                    cursor.execute("INSERT INTO vendas (data, produto, cliente, quantidade, total, forma_pagamento) VALUES (?, ?, ?, ?, ?, ?)",
-                                   (data_venda, produto, cliente, quantidade, total, forma_pagamento))
+                    cursor.execute("INSERT INTO vendas (data, produto, cliente, quantidade, total) VALUES (?, ?, ?, ?, ?)",
+                                   (data_venda, produto, cliente, quantidade, total))
                     cursor.execute("UPDATE produtos SET estoque=estoque-? WHERE nome=?", (quantidade, produto))
                     conn.commit()
 
@@ -159,43 +169,71 @@ else:
                     c.drawString(100, 760, f"Cliente: {cliente}")
                     c.drawString(100, 740, f"Produto: {produto}")
                     c.drawString(100, 720, f"Quantidade: {quantidade}")
-                    c.drawString(100, 700, f"Forma de Pagamento: {forma_pagamento}")
-                    c.drawString(100, 680, f"Total: R$ {total:.2f}")
+                    c.drawString(100, 700, f"Total: R$ {total:.2f}")
+                    c.drawString(100, 680, f"Pagamento: {forma_pagamento}")
                     c.save()
 
                     st.download_button("Baixar Comprovante em PDF", buffer.getvalue(), file_name="comprovante.pdf")
-                    st.success("Venda registrada com sucesso")
+                    st.success("Venda registrada com sucesso!")
         else:
             st.info("Cadastre produtos e clientes antes de vender")
 
+    # Cancelar venda / histórico com filtro
+    elif menu == "Cancelar Venda":
+        st.subheader("Cancelar Venda")
+        data_inicio = st.date_input("Data Inicial")
+        data_fim = st.date_input("Data Final")
+
+        vendas = cursor.execute("SELECT id, data, produto, cliente, quantidade, total FROM vendas").fetchall()
+        df_vendas = pd.DataFrame(vendas, columns=["ID", "Data", "Produto", "Cliente", "Quantidade", "Total"])
+        df_vendas["Data"] = pd.to_datetime(df_vendas["Data"])
+
+        df_filtrado = df_vendas[(df_vendas["Data"] >= pd.to_datetime(data_inicio)) & (df_vendas["Data"] <= pd.to_datetime(data_fim))]
+
+        st.dataframe(df_filtrado)
+
+        venda_id = st.number_input("ID da Venda para Cancelar", step=1)
+        if st.button("Cancelar Venda"):
+            venda = cursor.execute("SELECT produto, quantidade FROM vendas WHERE id=?", (venda_id,)).fetchone()
+            if venda:
+                produto, quantidade = venda
+                cursor.execute("DELETE FROM vendas WHERE id=?", (venda_id,))
+                cursor.execute("UPDATE produtos SET estoque=estoque+? WHERE nome=?", (quantidade, produto))
+                conn.commit()
+                st.success("Venda cancelada com sucesso!")
+            else:
+                st.warning("ID de venda não encontrado")
+
+    # Relatórios com gráficos e exportação em PDF
     elif menu == "Relatórios":
         st.subheader("Relatório de Vendas")
         data_inicio = st.date_input("Data inicial")
         data_fim = st.date_input("Data final")
-        filtro_pagamento = st.selectbox("Filtrar por forma de pagamento", ["Todos", "Dinheiro", "Cartão", "Pix"])
 
-        vendas = cursor.execute("SELECT data, produto, cliente, quantidade, total, forma_pagamento FROM vendas").fetchall()
-        df = [v for v in vendas if data_inicio.strftime("%Y-%m-%d") <= v[0][:10] <= data_fim.strftime("%Y-%m-%d") and (filtro_pagamento == "Todos" or v[5] == filtro_pagamento)]
+        vendas = cursor.execute("SELECT data, produto, cliente, quantidade, total FROM vendas").fetchall()
+        df = [v for v in vendas if data_inicio.strftime("%Y-%m-%d") <= v[0][:10] <= data_fim.strftime("%Y-%m-%d")]
 
         st.write("### Vendas no Período")
-        df_vendas = pd.DataFrame(df, columns=["Data", "Produto", "Cliente", "Quantidade", "Total", "Pagamento"])
-        st.dataframe(df_vendas)
+        st.dataframe(df)
 
-        total = df_vendas["Total"].sum()
+        total = sum([v[4] for v in df])
         st.success(f"Total vendido no período: R$ {total:.2f}")
 
+        # Gráfico de vendas
+        df_vendas = pd.DataFrame(df, columns=["Data", "Produto", "Cliente", "Quantidade", "Total"])
+        df_vendas["Data"] = pd.to_datetime(df_vendas["Data"])
         if not df_vendas.empty:
-            df_vendas["Data"] = pd.to_datetime(df_vendas["Data"])
             grafico = px.bar(df_vendas, x="Data", y="Total", color="Produto", title="Vendas por Produto")
             st.plotly_chart(grafico)
 
+            # Exportar PDF
             buffer_pdf = io.BytesIO()
             pdf = canvas.Canvas(buffer_pdf, pagesize=A4)
             pdf.drawString(100, 800, "Relatório de Vendas")
-            pdf.drawString(100, 780, f"Período: {data_inicio} até {data_fim} - Forma de Pagamento: {filtro_pagamento}")
+            pdf.drawString(100, 780, f"Período: {data_inicio} até {data_fim}")
             y = 760
-            for _, v in df_vendas.iterrows():
-                linha = f"{v['Data']} - {v['Produto']} - {v['Cliente']} - Qtde: {v['Quantidade']} - R$ {v['Total']:.2f} - {v['Pagamento']}"
+            for v in df:
+                linha = f"{v[0]} - {v[1]} - {v[2]} - Qtde: {v[3]} - R$ {v[4]:.2f}"
                 pdf.drawString(100, y, linha)
                 y -= 20
                 if y < 50:
