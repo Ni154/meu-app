@@ -19,14 +19,19 @@ CREATE TABLE IF NOT EXISTS empresa (
     nome TEXT NOT NULL,
     cnpj TEXT NOT NULL
 )""")
-
+    
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS usuarios (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     usuario TEXT NOT NULL,
     senha TEXT NOT NULL
 )""")
-
+# Cria um usuário padrão se a tabela estiver vazia
+cursor.execute("SELECT COUNT(*) FROM usuarios")
+if cursor.fetchone()[0] == 0:
+    cursor.execute("INSERT INTO usuarios (usuario, senha) VALUES (?, ?)", ("admin", "1234"))
+    conn.commit()
+    
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS clientes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,11 +60,8 @@ CREATE TABLE IF NOT EXISTS vendas (
     quantidade INTEGER,
     total REAL
 )""")
-# Cria um usuário padrão se a tabela estiver vazia
-cursor.execute("SELECT COUNT(*) FROM usuarios")
-if cursor.fetchone()[0] == 0:
-    cursor.execute("INSERT INTO usuarios (usuario, senha) VALUES (?, ?)", ("admin", "1234"))
-    conn.commit()
+
+ conn.commit()
 
 if "logado" not in st.session_state:
     st.session_state.logado = False
