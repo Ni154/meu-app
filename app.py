@@ -1,4 +1,9 @@
-import streamlit as st import sqlite3 from datetime import datetime from reportlab.pdfgen import canvas import io import os
+import streamlit as st 
+import sqlite3 
+from datetime import datetime 
+from reportlab.pdfgen import canvas 
+import io 
+import os
 
 Inicializa banco de dados
 
