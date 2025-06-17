@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS clientes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nome TEXT NOT NULL,
     cpf TEXT,
-    telefone TEXT
+    telefone TEXT,
+    endereco TEXT
 )""")
 
 cursor.execute("""
@@ -126,10 +127,11 @@ else:
         nome = st.text_input("Nome")
         cpf = st.text_input("CPF")
         telefone = st.text_input("Telefone")
+        endereco = st.text_area("Endereço (Rua, Número, Apto...)")
         if st.button("Cadastrar Cliente"):
             if nome:
                 try:
-                    cursor.execute("INSERT INTO clientes (nome, cpf, telefone) VALUES (?, ?, ?)", (nome, cpf, telefone))
+                    cursor.execute("INSERT INTO clientes (nome, cpf, telefone, endereco) VALUES (?, ?, ?, ?)", (nome, cpf, telefone, endereco))
                     conn.commit()
                     st.success("Cliente cadastrado com sucesso")
                 except Exception as e:
@@ -158,8 +160,14 @@ else:
                 st.warning("Preencha os campos obrigatórios.")
 
         st.subheader("Produtos Cadastrados")
-        produtos = cursor.execute("SELECT nome, preco, estoque, categoria FROM produtos").fetchall()
-        st.dataframe(produtos)
+        produtos_df = pd.read_sql("SELECT id, nome, preco, estoque, categoria FROM produtos", conn)
+        for index, row in produtos_df.iterrows():
+            st.write(f"**Produto:** {row['nome']} | **Preço:** R$ {row['preco']} | **Estoque:** {row['estoque']} | **Categoria:** {row['categoria']}")
+            if st.button(f"Excluir {row['nome']}"):
+                cursor.execute("DELETE FROM produtos WHERE id=?", (row['id'],))
+                conn.commit()
+                st.success("Produto excluído com sucesso")
+                st.experimental_rerun()
 
     elif st.session_state.pagina == "Vendas":
         st.subheader("Registrar Venda")
@@ -169,13 +177,18 @@ else:
 
         if produtos and clientes:
             produto = st.selectbox("Produto", produtos)
+            produto_info = cursor.execute("SELECT preco, estoque, unidade, categoria FROM produtos WHERE nome=?", (produto,)).fetchone()
+            st.write(f"**Preço:** R$ {produto_info[0]} | **Estoque:** {produto_info[1]} | **Unidade:** {produto_info[2]} | **Categoria:** {produto_info[3]}")
+
             cliente = st.selectbox("Cliente", clientes)
+            cliente_info = cursor.execute("SELECT telefone, endereco FROM clientes WHERE nome=?", (cliente,)).fetchone()
+            st.write(f"**Telefone:** {cliente_info[0]} | **Endereço:** {cliente_info[1]}")
+
             forma_pagamento = st.selectbox("Forma de Pagamento", formas_pagamento)
             quantidade = st.number_input("Quantidade", min_value=1, step=1)
 
             if st.button("Finalizar Venda"):
-                produto_info = cursor.execute("SELECT preco, estoque FROM produtos WHERE nome=?", (produto,)).fetchone()
-                preco, estoque = produto_info
+                preco, estoque = produto_info[0], produto_info[1]
                 if quantidade > estoque:
                     st.warning("Estoque insuficiente")
                 else:
@@ -193,10 +206,12 @@ else:
                         c.drawString(100, 800, "NS SISTEMAS - COMPROVANTE DE VENDA")
                         c.drawString(100, 780, f"Data: {data_venda}")
                         c.drawString(100, 760, f"Cliente: {cliente}")
-                        c.drawString(100, 740, f"Produto: {produto}")
-                        c.drawString(100, 720, f"Quantidade: {quantidade}")
-                        c.drawString(100, 700, f"Forma de Pagamento: {forma_pagamento}")
-                        c.drawString(100, 680, f"Total: R$ {total:.2f}")
+                        c.drawString(100, 740, f"Endereço: {cliente_info[1]}")
+                        c.drawString(100, 720, f"Telefone: {cliente_info[0]}")
+                        c.drawString(100, 700, f"Produto: {produto}")
+                        c.drawString(100, 680, f"Quantidade: {quantidade}")
+                        c.drawString(100, 660, f"Forma de Pagamento: {forma_pagamento}")
+                        c.drawString(100, 640, f"Total: R$ {total:.2f}")
                         c.save()
 
                         st.download_button("Baixar Comprovante em PDF", buffer.getvalue(), file_name="comprovante.pdf")
