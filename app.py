@@ -4,7 +4,6 @@ from datetime import datetime
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 import io
-import os
 import pandas as pd
 import plotly.express as px
 
@@ -19,6 +18,13 @@ CREATE TABLE IF NOT EXISTS empresa (
     nome TEXT NOT NULL,
     cnpj TEXT NOT NULL
 )""")
+
+# Adiciona a coluna ramo na tabela empresa se ainda não existir
+cursor.execute("PRAGMA table_info(empresa)")
+colunas = [col[1] for col in cursor.fetchall()]
+if "ramo" not in colunas:
+    cursor.execute("ALTER TABLE empresa ADD COLUMN ramo TEXT")
+    conn.commit()
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS usuarios (
@@ -78,13 +84,45 @@ if not st.session_state.logado:
 st.sidebar.title("NS Sistemas")
 menu = st.sidebar.radio("Menu", ["Início", "Empresa", "Clientes", "Produtos", "Vendas", "Relatórios"])
 
-# Exibe dados da empresa
-cursor.execute("SELECT nome, cnpj FROM empresa ORDER BY id DESC LIMIT 1")
+# Exibe dados da empresa e aplica tema conforme ramo
+cursor.execute("SELECT nome, cnpj, ramo FROM empresa ORDER BY id DESC LIMIT 1")
 dados_empresa = cursor.fetchone()
 
 if dados_empresa:
-    st.markdown(f"### Empresa: {dados_empresa[0]}")
-    st.markdown(f"**CNPJ:** {dados_empresa[1]}")
+    nome_emp, cnpj_emp, ramo_emp = dados_empresa
+    st.markdown(f"### Empresa: {nome_emp}")
+    st.markdown(f"**CNPJ:** {cnpj_emp}")
+    st.markdown(f"**Ramo:** {ramo_emp}")
+
+    # Aplicar tema CSS simples conforme ramo
+    if ramo_emp == "Restaurante":
+        st.markdown("""
+        <style>
+        .css-1d391kg {background-color: #FFF5E1 !important;}
+        h3, h2, .css-1v3fvcr {color: #D35400 !important;}
+        </style>
+        """, unsafe_allow_html=True)
+    elif ramo_emp == "Clínica":
+        st.markdown("""
+        <style>
+        .css-1d391kg {background-color: #E6F0FF !important;}
+        h3, h2, .css-1v3fvcr {color: #154360 !important;}
+        </style>
+        """, unsafe_allow_html=True)
+    elif ramo_emp == "Mercado":
+        st.markdown("""
+        <style>
+        .css-1d391kg {background-color: #E8F8F5 !important;}
+        h3, h2, .css-1v3fvcr {color: #117A65 !important;}
+        </style>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <style>
+        .css-1d391kg {background-color: #FFFFFF !important;}
+        h3, h2, .css-1v3fvcr {color: #000000 !important;}
+        </style>
+        """, unsafe_allow_html=True)
 else:
     st.warning("Nenhuma empresa cadastrada.")
 
@@ -93,10 +131,16 @@ if menu == "Empresa":
     st.subheader("Cadastrar Empresa")
     nome_empresa = st.text_input("Nome da Empresa")
     cnpj_empresa = st.text_input("CNPJ")
+    ramo = st.selectbox("Selecione o ramo da empresa", ["Restaurante", "Clínica", "Mercado", "Outro"])
+
     if st.button("Salvar Empresa"):
-        cursor.execute("INSERT INTO empresa (nome, cnpj) VALUES (?, ?)", (nome_empresa, cnpj_empresa))
-        conn.commit()
-        st.success("Empresa cadastrada!")
+        if nome_empresa.strip() == "" or cnpj_empresa.strip() == "":
+            st.error("Por favor, preencha nome e CNPJ.")
+        else:
+            cursor.execute("INSERT INTO empresa (nome, cnpj, ramo) VALUES (?, ?, ?)", (nome_empresa, cnpj_empresa, ramo))
+            conn.commit()
+            st.success("Empresa cadastrada!")
+            st.experimental_rerun()
 
 # Cadastro de clientes
 elif menu == "Clientes":
