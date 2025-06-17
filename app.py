@@ -63,6 +63,13 @@ CREATE TABLE IF NOT EXISTS vendas (
 
  conn.commit()
 
+# Inserir usuário padrão se ainda não existir
+cursor.execute("SELECT COUNT(*) FROM usuarios")
+if cursor.fetchone()[0] == 0:
+    cursor.execute("INSERT INTO usuarios (usuario, senha) VALUES (?, ?)", ("admin", "1234"))
+    conn.commit()
+
+# Controle de login
 if "logado" not in st.session_state:
     st.session_state.logado = False
 
@@ -78,6 +85,7 @@ if not st.session_state.logado:
         else:
             st.error("Usuário ou senha incorretos")
             st.stop()
+
 else:
     st.sidebar.title("NS Sistemas")
     menu = st.sidebar.radio("Menu", ["Início", "Empresa", "Clientes", "Produtos", "Vendas", "Cancelar Venda", "Relatórios"])
