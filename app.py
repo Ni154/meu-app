@@ -1,122 +1,117 @@
-import streamlit as st
-import pandas as pd
-from datetime import datetime
-import os
+import streamlit as st import sqlite3 from datetime import datetime from reportlab.pdfgen import canvas import io import os
 
-# Arquivos Excel
-FILE_PRODUTOS = "produtos.xlsx"
-FILE_VENDAS = "vendas.xlsx"
+Inicializa banco de dados
 
-# Função para carregar ou criar DataFrames
-def carregar_dados(arquivo, colunas):
-    if os.path.exists(arquivo):
-        return pd.read_excel(arquivo)
-    else:
-        return pd.DataFrame(columns=colunas)
+conn = sqlite3.connect("sistema.db", check_same_thread=False) cursor = conn.cursor()
 
-# Inicializa os dados
-df_produtos = carregar_dados(FILE_PRODUTOS, ["Nome", "Preço", "Estoque", "Categoria", "Data"])
-df_vendas = carregar_dados(FILE_VENDAS, ["Data", "Produto", "Quantidade", "Total"])
+Criação das tabelas
 
-st.title("Sistema PDV Web")
+cursor.execute(""" CREATE TABLE IF NOT EXISTS empresa ( id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT NOT NULL, cnpj TEXT NOT NULL ) """)
 
-aba = st.sidebar.selectbox("Menu", ["Cadastro de Produtos", "Vendas", "Relatórios"])
+cursor.execute(""" CREATE TABLE IF NOT EXISTS usuarios ( id INTEGER PRIMARY KEY AUTOINCREMENT, usuario TEXT NOT NULL, senha TEXT NOT NULL ) """)
 
-# Cadastro de Produtos
-if aba == "Cadastro de Produtos":
-    st.subheader("Cadastrar Novo Produto")
-    nome = st.text_input("Nome do Produto")
-    preco = st.number_input("Preço", min_value=0.0, step=0.01)
-    estoque = st.number_input("Quantidade em Estoque", min_value=0, step=1)
-    categoria = st.text_input("Categoria")
-    data = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+cursor.execute(""" CREATE TABLE IF NOT EXISTS clientes ( id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT NOT NULL, cpf TEXT, telefone TEXT ) """)
 
-    if st.button("Cadastrar"):
-        novo = {"Nome": nome, "Preço": preco, "Estoque": estoque, "Categoria": categoria, "Data": data}
-        df_produtos = pd.concat([df_produtos, pd.DataFrame([novo])], ignore_index=True)
-        df_produtos.to_excel(FILE_PRODUTOS, index=False)
-        st.success("Produto cadastrado com sucesso!")
+cursor.execute(""" CREATE TABLE IF NOT EXISTS produtos ( id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT, preco REAL, estoque INTEGER, categoria TEXT, data TEXT ) """)
 
-    st.subheader("Produtos Cadastrados")
-    st.dataframe(df_produtos)
+cursor.execute(""" CREATE TABLE IF NOT EXISTS vendas ( id INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT, produto TEXT, cliente TEXT, quantidade INTEGER, total REAL ) """)
 
-# Vendas
-elif aba == "Vendas":
-    st.subheader("Registrar Venda")
-    produtos = df_produtos["Nome"].tolist()
+conn.commit()
 
-    if produtos:
-        produto = st.selectbox("Produto", produtos)
-        quantidade = st.number_input("Quantidade", min_value=1, step=1)
+Função para login
 
-        if st.button("Finalizar Venda"):
-            produto_info = df_produtos[df_produtos["Nome"] == produto].iloc[0]
-            if quantidade > produto_info["Estoque"]:
-                st.warning("Estoque insuficiente!")
-            else:
-                total = quantidade * produto_info["Preço"]
-                data_venda = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+if "logado" not in st.session_state: st.session_state.logado = False
 
-                # Atualizar estoque
-                df_produtos.loc[df_produtos["Nome"] == produto, "Estoque"] -= quantidade
-                df_produtos.to_excel(FILE_PRODUTOS, index=False)
+if not st.session_state.logado: st.title("NS Sistemas - Login") usuario = st.text_input("Usuário") senha = st.text_input("Senha", type="password") if st.button("Entrar"): cursor.execute("SELECT * FROM usuarios WHERE usuario=? AND senha=?", (usuario, senha)) if cursor.fetchone(): st.session_state.logado = True st.experimental_rerun() else: st.error("Usuário ou senha incorretos") st.stop()
 
-                # Salvar venda
-                venda = {"Data": data_venda, "Produto": produto, "Quantidade": quantidade, "Total": total}
-                df_vendas = pd.concat([df_vendas, pd.DataFrame([venda])], ignore_index=True)
-                df_vendas.to_excel(FILE_VENDAS, index=False)
+Tela inicial após login
 
-                # Gerar comprovante em TXT
-                nome_txt = f"comprovante_{produto}{data_venda.replace(':', '-').replace(' ', '')}.txt"
-                conteudo = f"""
-Comprovante de Venda
-----------------------------
-Data: {data_venda}
-Produto: {produto}
-Quantidade: {quantidade}
-Total: R$ {total:.2f}
-"""
-                with open(nome_txt, "w", encoding="utf-8") as f:
-                    f.write(conteudo)
+st.sidebar.title("NS Sistemas") menu = st.sidebar.radio("Menu", ["Início", "Empresa", "Clientes", "Produtos", "Vendas", "Relatórios"])
 
-                with open(nome_txt, "rb") as file:
-                    st.download_button(
-                        label="Baixar Comprovante em TXT",
-                        data=file,
-                        file_name=nome_txt,
-                        mime="text/plain"
-                    )
+Exibe dados da empresa
 
-                st.success("Venda registrada com sucesso!")
-    else:
-        st.warning("Cadastre produtos primeiro.")
+cursor.execute("SELECT nome, cnpj FROM empresa ORDER BY id DESC LIMIT 1") dados_empresa = cursor.fetchone()
 
-# Relatórios
-elif aba == "Relatórios":
-    st.subheader("Relatório de Vendas")
-    filtro_produto = st.selectbox("Filtrar por Produto", ["Todos"] + df_vendas["Produto"].unique().tolist())
+if dados_empresa: st.markdown(f"### Empresa: {dados_empresa[0]}  ") st.markdown(f"CNPJ: {dados_empresa[1]}") else: st.warning("Nenhuma empresa cadastrada.")
 
-    if filtro_produto != "Todos":
-        df_filtrado = df_vendas[df_vendas["Produto"] == filtro_produto]
-    else:
-        df_filtrado = df_vendas
+Cadastro da empresa
 
-    st.dataframe(df_filtrado)
+if menu == "Empresa": st.subheader("Cadastrar Empresa") nome_empresa = st.text_input("Nome da Empresa") cnpj_empresa = st.text_input("CNPJ") if st.button("Salvar Empresa"): cursor.execute("INSERT INTO empresa (nome, cnpj) VALUES (?, ?)", (nome_empresa, cnpj_empresa)) conn.commit() st.success("Empresa cadastrada!")
 
-    total_vendas = df_filtrado["Total"].sum()
-    st.info(f"Total vendido: R$ {total_vendas:.2f}")
+Cadastro de clientes
 
-    # Cancelamento de venda
-    st.subheader("Cancelar Venda")
+elif menu == "Clientes": st.subheader("Cadastro de Cliente") nome = st.text_input("Nome") cpf = st.text_input("CPF") telefone = st.text_input("Telefone")
 
-    if not df_filtrado.empty:
-        opcoes = df_filtrado.apply(lambda row: f"{row['Data']} - {row['Produto']} - R$ {row['Total']:.2f}", axis=1).tolist()
-        venda_selecionada = st.selectbox("Selecione a venda para cancelar", opcoes)
+if st.button("Cadastrar Cliente"):
+    cursor.execute("INSERT INTO clientes (nome, cpf, telefone) VALUES (?, ?, ?)", (nome, cpf, telefone))
+    conn.commit()
+    st.success("Cliente cadastrado com sucesso")
 
-        if st.button("Cancelar Venda"):
-            idx = df_filtrado.iloc[opcoes.index(venda_selecionada)].name
-            df_vendas = df_vendas.drop(index=idx).reset_index(drop=True)
-            df_vendas.to_excel(FILE_VENDAS, index=False)
-            st.success("Venda cancelada com sucesso! Recarregue a página para ver a atualização.")
-    else:
-        st.info("Não há vendas para cancelar.")
+Cadastro de produtos
+
+elif menu == "Produtos": st.subheader("Cadastro de Produtos") nome = st.text_input("Nome do Produto") preco = st.number_input("Preço", step=0.01) estoque = st.number_input("Estoque", step=1) categoria = st.text_input("Categoria") data = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+if st.button("Cadastrar Produto"):
+    cursor.execute("INSERT INTO produtos (nome, preco, estoque, categoria, data) VALUES (?, ?, ?, ?, ?)",
+                   (nome, preco, estoque, categoria, data))
+    conn.commit()
+    st.success("Produto cadastrado com sucesso")
+
+st.subheader("Produtos Cadastrados")
+produtos = cursor.execute("SELECT nome, preco, estoque, categoria FROM produtos").fetchall()
+st.dataframe(produtos)
+
+Tela de vendas
+
+elif menu == "Vendas": st.subheader("Registrar Venda")
+
+produtos = [row[0] for row in cursor.execute("SELECT nome FROM produtos").fetchall()]
+clientes = [row[0] for row in cursor.execute("SELECT nome FROM clientes").fetchall()]
+
+if produtos and clientes:
+    produto = st.selectbox("Produto", produtos)
+    cliente = st.selectbox("Cliente", clientes)
+    quantidade = st.number_input("Quantidade", min_value=1, step=1)
+
+    if st.button("Finalizar Venda"):
+        produto_info = cursor.execute("SELECT preco, estoque FROM produtos WHERE nome=?", (produto,)).fetchone()
+        preco, estoque = produto_info
+        if quantidade > estoque:
+            st.warning("Estoque insuficiente")
+        else:
+            total = quantidade * preco
+            data_venda = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            cursor.execute("INSERT INTO vendas (data, produto, cliente, quantidade, total) VALUES (?, ?, ?, ?, ?)",
+                           (data_venda, produto, cliente, quantidade, total))
+            cursor.execute("UPDATE produtos SET estoque=estoque-? WHERE nome=?", (quantidade, produto))
+            conn.commit()
+
+            # Gera comprovante PDF
+            buffer = io.BytesIO()
+            c = canvas.Canvas(buffer)
+            c.drawString(100, 800, "NS SISTEMAS - COMPROVANTE DE VENDA")
+            c.drawString(100, 780, f"Data: {data_venda}")
+            c.drawString(100, 760, f"Cliente: {cliente}")
+            c.drawString(100, 740, f"Produto: {produto}")
+            c.drawString(100, 720, f"Quantidade: {quantidade}")
+            c.drawString(100, 700, f"Total: R$ {total:.2f}")
+            c.save()
+
+            st.download_button("Baixar Comprovante em PDF", buffer.getvalue(), file_name="comprovante.pdf")
+            st.success("Venda registrada com sucesso")
+else:
+    st.info("Cadastre produtos e clientes antes de vender")
+
+Relatórios com filtro por data
+
+elif menu == "Relatórios": st.subheader("Relatório de Vendas") data_inicio = st.date_input("Data inicial") data_fim = st.date_input("Data final")
+
+vendas = cursor.execute("SELECT data, produto, cliente, quantidade, total FROM vendas").fetchall()
+df = [v for v in vendas if data_inicio.strftime("%Y-%m-%d") <= v[0][:10] <= data_fim.strftime("%Y-%m-%d")]
+
+st.write("### Vendas no Período")
+st.dataframe(df)
+
+total = sum([v[4] for v in df])
+st.success(f"Total vendido no período: R$ {total:.2f}")    
