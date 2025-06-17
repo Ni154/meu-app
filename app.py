@@ -55,8 +55,11 @@ CREATE TABLE IF NOT EXISTS vendas (
     quantidade INTEGER,
     total REAL
 )""")
-
-conn.commit()
+# Cria um usuário padrão se a tabela estiver vazia
+cursor.execute("SELECT COUNT(*) FROM usuarios")
+if cursor.fetchone()[0] == 0:
+    cursor.execute("INSERT INTO usuarios (usuario, senha) VALUES (?, ?)", ("admin", "1234"))
+    conn.commit()
 
 if "logado" not in st.session_state:
     st.session_state.logado = False
