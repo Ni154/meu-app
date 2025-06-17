@@ -9,8 +9,8 @@ import pandas as pd
 import plotly.express as px
 
 #Inicializa banco de dados
-
-conn = sqlite3.connect("sistema.db", check_same_thread=False) cursor = conn.cursor()
+conn = sqlite3.connect("sistema.db", check_same_thread=False) 
+cursor = conn.cursor()
 
 #Criação das tabelas
 
