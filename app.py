@@ -274,6 +274,12 @@ with st.sidebar:
         st.session_state.pagina = "Cancelar Venda"
     if st.button("Relatórios"):
         st.session_state.pagina = "Relatórios"
+    
+    st.markdown("---")
+    if st.button("🚪 Sair"):
+        st.session_state.logado = False
+        st.experimental_rerun()
+
 
 pagina = st.session_state.get("pagina", "Início")
 if pagina == "Início":
