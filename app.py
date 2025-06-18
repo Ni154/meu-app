@@ -65,10 +65,6 @@ conn.commit()
 # Estado inicial
 if "logado" not in st.session_state:
     st.session_state.logado = False
-if "logo" not in st.session_state:
-    st.session_state.logo = None
-if "show_config" not in st.session_state:
-    st.session_state.show_config = False
 if "cor_fundo" not in st.session_state:
     st.session_state.cor_fundo = "#FFFFFF"
 if "cor_menu" not in st.session_state:
@@ -103,16 +99,12 @@ st.markdown(f"""
             padding: 10px;
             border-radius: 10px;
         }}
-        .login-logo {{
-            display: flex;
-            justify-content: center;
-            margin-bottom: 20px;
-        }}
     </style>
 """, unsafe_allow_html=True)
 
 # Painel de configurações de cor
-def painel_configuracoes():
+with st.sidebar:
+    st.markdown("---")
     st.subheader("⚙️ Configurações")
     cor_fundo = st.color_picker("Cor do Fundo", st.session_state.cor_fundo)
     cor_menu = st.color_picker("Cor do Menu Lateral", st.session_state.cor_menu)
@@ -121,21 +113,9 @@ def painel_configuracoes():
         st.session_state.cor_menu = cor_menu
         st.experimental_rerun()
 
-# Página de login com logo discreta
+# Página de login
 def pagina_login():
     st.title("🍔 NS Lanches - Login")
-
-    if st.session_state.logo:
-        st.image(st.session_state.logo, width=200)
-        if st.button("🔁 Trocar logo"):
-            st.session_state.logo = None
-            st.experimental_rerun()
-    else:
-        logo_upload = st.file_uploader("Upload da logo da empresa", type=["png", "jpg", "jpeg"], key="logo_login")
-        if logo_upload:
-            st.session_state.logo = logo_upload
-            st.experimental_rerun()
-
     usuario = st.text_input("Usuário")
     senha = st.text_input("Senha", type="password")
     if st.button("Entrar"):
@@ -148,11 +128,10 @@ def pagina_login():
     st.stop()
 
 # Página inicial
+
 def pagina_inicio():
     st.subheader("🍔 Bem-vindo ao sistema de vendas NS Lanches")
     st.write("Utilize o menu lateral para navegar entre as funcionalidades.")
-
-# Placeholder para outras páginas
 
 def pagina_empresa():
     st.subheader("🏢 Cadastro de Empresa")
@@ -182,16 +161,9 @@ def pagina_relatorios():
 if not st.session_state.logado:
     pagina_login()
 
-# Ícone de configurações
-st.markdown('<div style="text-align:right;">⚙️</div>', unsafe_allow_html=True)
-if st.button("Abrir Configurações"):
-    st.session_state.show_config = not st.session_state.show_config
-
 # Menu lateral
 with st.sidebar:
     st.title("🍟 NS Lanches")
-    if st.session_state.logo:
-        st.image(st.session_state.logo, width=200)
     if st.button("Início"):
         st.session_state.pagina = "Início"
     if st.button("Empresa"):
@@ -206,12 +178,6 @@ with st.sidebar:
         st.session_state.pagina = "Cancelar Venda"
     if st.button("Relatórios"):
         st.session_state.pagina = "Relatórios"
-    if st.button("Configurações"):
-        st.session_state.show_config = not st.session_state.show_config
-
-# Painel de configurações
-if st.session_state.show_config:
-    painel_configuracoes()
 
 # Exibir página selecionada
 pagina = st.session_state.get("pagina", "Início")
