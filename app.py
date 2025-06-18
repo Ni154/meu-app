@@ -230,18 +230,59 @@ def pagina_vendas():
                 cursor.execute("UPDATE produtos SET estoque = estoque - ? WHERE nome = ?", (quantidade, produto))
             conn.commit()
 
-            # Salva comprovante PDF
+            # Criar comprovante PDF melhorado
             buffer = io.BytesIO()
             c = canvas.Canvas(buffer, pagesize=A4)
-            c.drawString(100, 800, f"Comprovante - NS Lanches")
-            c.drawString(100, 780, f"Data: {data_venda}")
-            c.drawString(100, 760, f"Cliente: {cliente}")
-            y = 740
+            width, height = A4
+
+            c.setFont("Helvetica-Bold", 18)
+            c.drawCentredString(width / 2, height - 50, "Comprovante de Venda - NS Lanches")
+
+            c.setLineWidth(1)
+            c.line(50, height - 60, width - 50, height - 60)
+
+            c.setFont("Helvetica", 12)
+            c.drawString(50, height - 90, f"Data: {data_venda}")
+            c.drawString(50, height - 110, f"Cliente: {cliente}")
+            c.drawString(50, height - 130, f"Pedido ID: {pedido_id}")
+
+            # Cabeçalho da tabela
+            y = height - 160
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(50, y, "Produto")
+            c.drawString(280, y, "Qtde")
+            c.drawString(350, y, "Unitário (R$)")
+            c.drawString(460, y, "Subtotal (R$)")
+
+            c.setLineWidth(0.5)
+            c.line(50, y - 5, width - 50, y - 5)
+
+            # Itens
+            c.setFont("Helvetica", 12)
+            y -= 25
+            total = 0
             for produto, qtde in st.session_state.carrinho.items():
                 preco_unit = next(p[1] for p in produtos_info if p[0] == produto)
-                c.drawString(100, y, f"Produto: {produto} | Qtde: {qtde} | Unit: R$ {preco_unit:.2f}")
+                subtotal = preco_unit * qtde
+                total += subtotal
+
+                c.drawString(50, y, produto)
+                c.drawRightString(320, y, str(qtde))
+                c.drawRightString(420, y, f"{preco_unit:.2f}")
+                c.drawRightString(520, y, f"{subtotal:.2f}")
                 y -= 20
-            c.drawString(100, y, f"Total: R$ {total:.2f}")
+                if y < 50:
+                    c.showPage()
+                    y = height - 50
+
+            # Linha separadora antes do total
+            c.line(350, y, 520, y)
+            y -= 20
+
+            c.setFont("Helvetica-Bold", 14)
+            c.drawString(350, y, "Total:")
+            c.drawRightString(520, y, f"R$ {total:.2f}")
+
             c.save()
             buffer.seek(0)
 
