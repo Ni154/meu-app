@@ -94,7 +94,7 @@ with st.sidebar:
     if st.button("Aplicar cores"):
         st.session_state.cor_fundo = cor_fundo
         st.session_state.cor_menu = cor_menu
-        st.rerun()
+        st.experimental_rerun()
 
 def pagina_login():
     st.title("🍔 NS Lanches - Login")
@@ -104,7 +104,7 @@ def pagina_login():
         cursor.execute("SELECT * FROM usuarios WHERE usuario=? AND senha=?", (usuario, senha))
         if cursor.fetchone():
             st.session_state.logado = True
-            st.rerun()
+            st.experimental_rerun()
         else:
             st.error("Usuário ou senha incorretos")
     st.stop()
@@ -196,7 +196,6 @@ def pagina_vendas():
 
     if st.button("Adicionar ao Carrinho"):
         if produto_selecionado in st.session_state.carrinho:
-            # Soma a quantidade se já tiver no carrinho
             nova_qtde = st.session_state.carrinho[produto_selecionado] + quantidade
             if nova_qtde <= estoque_prod:
                 st.session_state.carrinho[produto_selecionado] = nova_qtde
@@ -417,20 +416,43 @@ def pagina_relatorios():
     buffer.seek(0)
     st.download_button("📥 Baixar Relatório PDF", buffer, file_name="relatorio_vendas.pdf")
 
-menu = {
-    "Início": pagina_inicio,
-    "Empresa": pagina_empresa,
-    "Clientes": pagina_clientes,
-    "Produtos": pagina_produtos,
-    "Vendas": pagina_vendas,
-    "Cancelar Venda": pagina_cancelar_venda,
-    "Relatórios": pagina_relatorios
-}
-
 if not st.session_state.logado:
     pagina_login()
-else:
-    st.sidebar.title("Menu")
-    escolha = st.sidebar.radio("Navegação", list(menu.keys()))
-    st.session_state.pagina = escolha
-    menu[escolha]()
+
+with st.sidebar:
+    st.title("🍟 NS Lanches")
+    if st.button("Início"):
+        st.session_state.pagina = "Início"
+    if st.button("Empresa"):
+        st.session_state.pagina = "Empresa"
+    if st.button("Clientes"):
+        st.session_state.pagina = "Clientes"
+    if st.button("Produtos"):
+        st.session_state.pagina = "Produtos"
+    if st.button("Vendas"):
+        st.session_state.pagina = "Vendas"
+    if st.button("Cancelar Venda"):
+        st.session_state.pagina = "Cancelar Venda"
+    if st.button("Relatórios"):
+        st.session_state.pagina = "Relatórios"
+    
+    st.markdown("---")
+    if st.button("🚪 Sair"):
+        st.session_state.logado = False
+        st.experimental_rerun()
+
+pagina = st.session_state.get("pagina", "Início")
+if pagina == "Início":
+    pagina_inicio()
+elif pagina == "Empresa":
+    pagina_empresa()
+elif pagina == "Clientes":
+    pagina_clientes()
+elif pagina == "Produtos":
+    pagina_produtos()
+elif pagina == "Vendas":
+    pagina_vendas()
+elif pagina == "Cancelar Venda":
+    pagina_cancelar_venda()
+elif pagina == "Relatórios":
+    pagina_relatorios()
