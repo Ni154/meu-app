@@ -8,114 +8,90 @@ import pandas as pd
 import plotly.express as px
 import uuid
 
-# Conexao com banco de dados
+# --- Banco de dados e inicialização ---
+
 conn = sqlite3.connect("sistema.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# Cria tabelas se não existirem
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS usuarios (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    usuario TEXT NOT NULL,
-    senha TEXT NOT NULL
-)
-""")
-cursor.execute("SELECT COUNT(*) FROM usuarios")
-if cursor.fetchone()[0] == 0:
-    cursor.execute("INSERT INTO usuarios (usuario, senha) VALUES (?, ?)", ("admin", "1234"))
+def inicializar_banco():
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS usuarios (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        usuario TEXT NOT NULL,
+        senha TEXT NOT NULL
+    )
+    """)
+    cursor.execute("SELECT COUNT(*) FROM usuarios")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("INSERT INTO usuarios (usuario, senha) VALUES (?, ?)", ("admin", "1234"))
+        conn.commit()
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS empresa (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nome TEXT,
+        cnpj TEXT
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS clientes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nome TEXT NOT NULL,
+        cpf TEXT,
+        telefone TEXT,
+        endereco TEXT
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS produtos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nome TEXT,
+        preco REAL,
+        estoque INTEGER,
+        unidade TEXT,
+        categoria TEXT,
+        data TEXT
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS vendas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        data TEXT,
+        produto TEXT,
+        cliente TEXT,
+        quantidade INTEGER,
+        total REAL,
+        status TEXT DEFAULT 'Ativa',
+        pedido_id TEXT
+    )
+    """)
     conn.commit()
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS empresa (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT,
-    cnpj TEXT
-)
-""")
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS clientes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT NOT NULL,
-    cpf TEXT,
-    telefone TEXT,
-    endereco TEXT
-)
-""")
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS produtos (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT,
-    preco REAL,
-    estoque INTEGER,
-    unidade TEXT,
-    categoria TEXT,
-    data TEXT
-)
-""")
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS vendas (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    data TEXT,
-    produto TEXT,
-    cliente TEXT,
-    quantidade INTEGER,
-    total REAL,
-    status TEXT DEFAULT 'Ativa',
-    pedido_id TEXT
-)
-""")
-conn.commit()
-
-if "logado" not in st.session_state:
-    st.session_state.logado = False
-if "cor_fundo" not in st.session_state:
-    st.session_state.cor_fundo = "#FFFFFF"
-if "cor_menu" not in st.session_state:
-    st.session_state.cor_menu = "#F9A825"
-if "pagina" not in st.session_state:
-    st.session_state.pagina = "Início"
-
-st.set_page_config(layout="wide", page_title="NS Lanches")
-st.markdown(f"""
-    <style>
-        .stApp {{ background-color: {st.session_state.cor_fundo}; }}
-        .css-1d391kg {{ background-color: {st.session_state.cor_menu}; }}
-    </style>
-""", unsafe_allow_html=True)
-
-with st.sidebar:
-    st.markdown("---")
-    st.subheader("⚙️ Configurações")
-    cor_fundo = st.color_picker("Cor do Fundo", st.session_state.cor_fundo)
-    cor_menu = st.color_picker("Cor do Menu Lateral", st.session_state.cor_menu)
-    if st.button("Aplicar cores"):
-        st.session_state.cor_fundo = cor_fundo
-        st.session_state.cor_menu = cor_menu
-        st.experimental_rerun()
+# --- Páginas ---
 
 def pagina_login():
     st.title("🍔 NS Lanches - Login")
     usuario = st.text_input("Usuário")
     senha = st.text_input("Senha", type="password")
     entrar = st.button("Entrar")
-    
+
     if entrar:
         cursor.execute("SELECT * FROM usuarios WHERE usuario=? AND senha=?", (usuario, senha))
         if cursor.fetchone():
             st.session_state.logado = True
-            st.experimental_rerun()  # Recarrega a aplicação após login
+            st.experimental_rerun()
         else:
             st.error("Usuário ou senha incorretos")
 
-    if not st.session_state.logado:
-        st.stop()  # Para o app até login ser realizado
+    if not st.session_state.get("logado", False):
+        st.stop()
 
 def pagina_inicio():
     st.subheader("🍔 Bem-vindo ao sistema de vendas NS Lanches")
-    st.write("Utilize o menu lateral para navegar entre as funcionalidades.")
+    st.write("Use o menu lateral para navegar entre as funcionalidades.")
 
 def pagina_empresa():
     st.subheader("🏢 Cadastro de Empresa")
@@ -191,6 +167,7 @@ def pagina_vendas():
 
         st.success("Venda registrada com sucesso!")
 
+        # Gerar comprovante PDF
         buffer = io.BytesIO()
         c = canvas.Canvas(buffer, pagesize=A4)
         c.drawString(100, 800, f"Comprovante - NS Lanches")
@@ -242,39 +219,61 @@ def pagina_relatorios():
     buffer.seek(0)
     st.download_button("📥 Baixar Relatório PDF", buffer, file_name="relatorio_vendas.pdf")
 
-# Fluxo principal
-if not st.session_state.logado:
-    pagina_login()
+# --- Menu lateral e navegação ---
 
-with st.sidebar:
-    st.title("🍟 NS Lanches")
-    if st.button("Início"):
+def menu_lateral():
+    st.sidebar.title("🍟 NS Lanches")
+    if st.sidebar.button("Início"):
         st.session_state.pagina = "Início"
-    if st.button("Empresa"):
+    if st.sidebar.button("Empresa"):
         st.session_state.pagina = "Empresa"
-    if st.button("Clientes"):
+    if st.sidebar.button("Clientes"):
         st.session_state.pagina = "Clientes"
-    if st.button("Produtos"):
+    if st.sidebar.button("Produtos"):
         st.session_state.pagina = "Produtos"
-    if st.button("Vendas"):
+    if st.sidebar.button("Vendas"):
         st.session_state.pagina = "Vendas"
-    if st.button("Cancelar Venda"):
+    if st.sidebar.button("Cancelar Venda"):
         st.session_state.pagina = "Cancelar Venda"
-    if st.button("Relatórios"):
+    if st.sidebar.button("Relatórios"):
         st.session_state.pagina = "Relatórios"
+    if st.sidebar.button("Sair"):
+        st.session_state.logado = False
+        st.experimental_rerun()
 
-pagina = st.session_state.get("pagina", "Início")
-if pagina == "Início":
-    pagina_inicio()
-elif pagina == "Empresa":
-    pagina_empresa()
-elif pagina == "Clientes":
-    pagina_clientes()
-elif pagina == "Produtos":
-    pagina_produtos()
-elif pagina == "Vendas":
-    pagina_vendas()
-elif pagina == "Cancelar Venda":
-    pagina_cancelar_venda()
-elif pagina == "Relatórios":
-    pagina_relatorios()
+# --- App principal ---
+
+def main():
+    inicializar_banco()
+
+    if "logado" not in st.session_state:
+        st.session_state.logado = False
+    if "pagina" not in st.session_state:
+        st.session_state.pagina = "Início"
+
+    if not st.session_state.logado:
+        pagina_login()
+    else:
+        menu_lateral()
+        pagina = st.session_state.pagina
+
+        if pagina == "Início":
+            pagina_inicio()
+        elif pagina == "Empresa":
+            pagina_empresa()
+        elif pagina == "Clientes":
+            pagina_clientes()
+        elif pagina == "Produtos":
+            pagina_produtos()
+        elif pagina == "Vendas":
+            pagina_vendas()
+        elif pagina == "Cancelar Venda":
+            pagina_cancelar_venda()
+        elif pagina == "Relatórios":
+            pagina_relatorios()
+        else:
+            st.write("Página não implementada.")
+
+if __name__ == "__main__":
+    st.set_page_config(layout="wide", page_title="NS Lanches")
+    main()
