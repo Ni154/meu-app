@@ -239,7 +239,7 @@ def menu_lateral():
         st.session_state.pagina = "Relatórios"
     if st.sidebar.button("Sair"):
         st.session_state.logado = False
-        st.experimental_rerun()
+        st.rerun()
 
 # --- App principal ---
 
