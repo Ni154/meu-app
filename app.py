@@ -17,7 +17,7 @@ def inicializar_banco():
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS usuarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        usuario TEXT NOT NULL,
+        usuario TEXT NOT NULL UNIQUE,
         senha TEXT NOT NULL
     )
     """)
@@ -82,7 +82,7 @@ def pagina_login():
         cursor.execute("SELECT * FROM usuarios WHERE usuario=? AND senha=?", (usuario, senha))
         if cursor.fetchone():
             st.session_state.logado = True
-            st.rerun()
+            st.experimental_rerun()
         else:
             st.error("Usuário ou senha incorretos")
 
@@ -219,6 +219,66 @@ def pagina_relatorios():
     buffer.seek(0)
     st.download_button("📥 Baixar Relatório PDF", buffer, file_name="relatorio_vendas.pdf")
 
+def pagina_painel_admin():
+    st.subheader("🔧 Painel Administrativo - Gestão de Usuários e Indicadores")
+
+    # Indicadores gerais
+    total_clientes = cursor.execute("SELECT COUNT(*) FROM clientes").fetchone()[0]
+    total_estoque = cursor.execute("SELECT SUM(estoque) FROM produtos").fetchone()[0] or 0
+    total_vendas = cursor.execute("SELECT SUM(total) FROM vendas WHERE status='Ativa'").fetchone()[0] or 0
+
+    st.markdown(f"**Total de Clientes:** {total_clientes}")
+    st.markdown(f"**Total em Estoque:** {total_estoque}")
+    st.markdown(f"**Total de Vendas (R$):** {total_vendas:.2f}")
+
+    # Alertas de estoque negativo
+    produtos_negativos = cursor.execute("SELECT nome, estoque FROM produtos WHERE estoque < 0").fetchall()
+    if produtos_negativos:
+        st.warning("⚠️ Produtos com estoque negativo:")
+        for p in produtos_negativos:
+            st.write(f"- {p[0]}: {p[1]} unidades")
+    else:
+        st.success("Nenhum produto com estoque negativo.")
+
+    st.write("---")
+
+    # Gestão de usuários
+    st.subheader("👤 Gestão de Usuários")
+
+    usuarios = cursor.execute("SELECT id, usuario FROM usuarios ORDER BY id").fetchall()
+    df_usuarios = pd.DataFrame(usuarios, columns=["ID", "Usuário"])
+    st.dataframe(df_usuarios)
+
+    with st.form("form_novo_usuario"):
+        st.write("Adicionar Novo Usuário")
+        novo_usuario = st.text_input("Usuário")
+        nova_senha = st.text_input("Senha", type="password")
+        submit = st.form_submit_button("Adicionar")
+        if submit:
+            if novo_usuario and nova_senha:
+                try:
+                    cursor.execute("INSERT INTO usuarios (usuario, senha) VALUES (?, ?)", (novo_usuario, nova_senha))
+                    conn.commit()
+                    st.success(f"Usuário '{novo_usuario}' adicionado com sucesso.")
+                    st.experimental_rerun()
+                except sqlite3.IntegrityError:
+                    st.error("Usuário já existe.")
+            else:
+                st.warning("Preencha todos os campos.")
+
+    st.write("---")
+    st.write("Excluir Usuário")
+    usuarios_dict = {u[1]: u[0] for u in usuarios if u[1] != "admin"}  # não pode excluir admin
+    if usuarios_dict:
+        usuario_excluir = st.selectbox("Selecione o usuário para excluir", options=list(usuarios_dict.keys()))
+        if st.button("Excluir"):
+            cursor.execute("DELETE FROM usuarios WHERE id=?", (usuarios_dict[usuario_excluir],))
+            conn.commit()
+            st.success(f"Usuário '{usuario_excluir}' excluído.")
+            st.experimental_rerun()
+    else:
+        st.info("Nenhum usuário para excluir (exceto admin).")
+
 # --- Menu lateral e navegação ---
 
 def menu_lateral():
@@ -237,9 +297,11 @@ def menu_lateral():
         st.session_state.pagina = "Cancelar Venda"
     if st.sidebar.button("Relatórios"):
         st.session_state.pagina = "Relatórios"
+    if st.sidebar.button("Painel Administrativo"):
+        st.session_state.pagina = "Painel Administrativo"
     if st.sidebar.button("Sair"):
         st.session_state.logado = False
-        st.rerun()
+        st.experimental_rerun()
 
 # --- App principal ---
 
@@ -271,6 +333,8 @@ def main():
             pagina_cancelar_venda()
         elif pagina == "Relatórios":
             pagina_relatorios()
+        elif pagina == "Painel Administrativo":
+            pagina_painel_admin()
         else:
             st.write("Página não implementada.")
 
