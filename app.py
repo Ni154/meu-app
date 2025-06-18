@@ -323,19 +323,37 @@ def pagina_cancelar_venda():
 
 def pagina_relatorios():
     st.subheader("📊 Relatórios de Vendas")
-    vendas = cursor.execute("SELECT data, produto, cliente, quantidade, total FROM vendas WHERE status='Ativa'").fetchall()
+
+    # Filtros de data
+    data_inicial = st.date_input("Data Inicial", value=datetime.now().date())
+    data_final = st.date_input("Data Final", value=datetime.now().date())
+
+    if data_inicial > data_final:
+        st.error("A Data Inicial não pode ser maior que a Data Final.")
+        return
+
+    # Buscar vendas no período filtrado
+    cursor.execute("""
+        SELECT data, produto, cliente, quantidade, total FROM vendas
+        WHERE status='Ativa' AND date(data) BETWEEN ? AND ?
+    """, (data_inicial.strftime("%Y-%m-%d"), data_final.strftime("%Y-%m-%d")))
+    vendas = cursor.fetchall()
+
     if not vendas:
-        st.info("Nenhuma venda registrada")
+        st.info("Nenhuma venda registrada neste período.")
         return
 
     df = pd.DataFrame(vendas, columns=["Data", "Produto", "Cliente", "Quantidade", "Total"])
+
     st.dataframe(df)
+
     st.plotly_chart(px.bar(df, x="Produto", y="Total", title="Vendas por Produto"))
     st.plotly_chart(px.bar(df, x="Cliente", y="Total", title="Vendas por Cliente"))
 
+    # Gerar PDF do relatório filtrado
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=A4)
-    pdf.drawString(100, 800, "Relatório de Vendas")
+    pdf.drawString(100, 800, f"Relatório de Vendas - {data_inicial.strftime('%d/%m/%Y')} até {data_final.strftime('%d/%m/%Y')}")
     y = 780
     for index, row in df.iterrows():
         pdf.drawString(100, y, f"{row['Data']} | {row['Cliente']} | {row['Produto']} | Qtde: {row['Quantidade']} | R$ {row['Total']:.2f}")
