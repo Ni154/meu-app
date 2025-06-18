@@ -93,14 +93,19 @@ def pagina_login():
     st.title("🍔 NS Lanches - Login")
     usuario = st.text_input("Usuário")
     senha = st.text_input("Senha", type="password")
-    if st.button("Entrar"):
+    entrar = st.button("Entrar")
+    
+    if entrar:
         cursor.execute("SELECT * FROM usuarios WHERE usuario=? AND senha=?", (usuario, senha))
         if cursor.fetchone():
             st.session_state.logado = True
-            st.experimental_rerun()
+            st.experimental_rerun()  # Recarrega a aplicação após login
         else:
             st.error("Usuário ou senha incorretos")
-    st.stop()
+
+    if not st.session_state.logado:
+        st.stop()  # Para de rodar o resto do app até que faça login
+
 
 def pagina_inicio():
     st.subheader("🍔 Bem-vindo ao sistema de vendas NS Lanches")
