@@ -128,7 +128,6 @@ def pagina_inicio():
     else:
         st.success("Todos os produtos estão com estoque disponível.")
 
-
 def pagina_empresa():
     st.subheader("🏢 Cadastro de Empresa")
     nome = st.text_input("Nome da Empresa")
@@ -353,56 +352,85 @@ def pagina_relatorios():
     # Gerar PDF do relatório filtrado
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=A4)
-    pdf.drawString(100, 800, f"Relatório de Vendas - {data_inicial.strftime('%d/%m/%Y')} até {data_final.strftime('%d/%m/%Y')}")
-    y = 780
+    width, height = A4
+
+    margem_esquerda = 50
+    margem_direita = width - 50
+    linha_inicial = height - 80
+    espacamento_linhas = 20
+    y = linha_inicial
+    pagina_atual = 1
+
+    # Função para desenhar cabeçalho
+    def desenhar_cabecalho():
+        nonlocal y
+        pdf.setFont("Helvetica-Bold", 16)
+        pdf.drawCentredString(width / 2, y, "Relatório de Vendas - NS Lanches")
+        y -= espacamento_linhas
+        pdf.setFont("Helvetica", 12)
+        periodo_texto = f"Período: {data_inicial.strftime('%d/%m/%Y')} até {data_final.strftime('%d/%m/%Y')}"
+        pdf.drawCentredString(width / 2, y, periodo_texto)
+        y -= espacamento_linhas
+        pdf.setLineWidth(1)
+        pdf.line(margem_esquerda, y, margem_direita, y)
+        y -= espacamento_linhas
+        pdf.setFont("Helvetica-Bold", 12)
+        pdf.drawString(margem_esquerda, y, "Data")
+        pdf.drawString(margem_esquerda + 100, y, "Cliente")
+        pdf.drawString(margem_esquerda + 250, y, "Produto")
+        pdf.drawRightString(margem_direita - 140, y, "Qtde")
+        pdf.drawRightString(margem_direita - 80, y, "Total (R$)")
+        y -= espacamento_linhas
+        pdf.setLineWidth(0.5)
+        pdf.line(margem_esquerda, y + 5, margem_direita, y + 5)
+        pdf.setFont("Helvetica", 11)
+
+    # Função para desenhar rodapé com número da página
+    def desenhar_rodape(pagina_num):
+        pdf.setFont("Helvetica-Oblique", 9)
+        texto_rodape = f"Página {pagina_num}"
+        pdf.drawRightString(margem_direita, 30, texto_rodape)
+
+    desenhar_cabecalho()
+
     for index, row in df.iterrows():
-        pdf.drawString(100, y, f"{row['Data']} | {row['Cliente']} | {row['Produto']} | Qtde: {row['Quantidade']} | R$ {row['Total']:.2f}")
-        y -= 20
-        if y < 50:
+        if y < 50:  # Quebra de página
+            desenhar_rodape(pagina_atual)
             pdf.showPage()
-            y = 800
+            pagina_atual += 1
+            y = linha_inicial
+            desenhar_cabecalho()
+
+        pdf.drawString(margem_esquerda, y, row['Data'][:19])  # Data com até segundos
+        pdf.drawString(margem_esquerda + 100, y, str(row['Cliente']))
+        pdf.drawString(margem_esquerda + 250, y, str(row['Produto']))
+        pdf.drawRightString(margem_direita - 140, y, str(row['Quantidade']))
+        pdf.drawRightString(margem_direita - 80, y, f"{row['Total']:.2f}")
+        y -= espacamento_linhas
+
+    # Linha final e rodapé
+    pdf.setLineWidth(1)
+    pdf.line(margem_esquerda, y + 10, margem_direita, y + 10)
+    desenhar_rodape(pagina_atual)
+
     pdf.save()
     buffer.seek(0)
     st.download_button("📥 Baixar Relatório PDF", buffer, file_name="relatorio_vendas.pdf")
 
+menu = {
+    "Início": pagina_inicio,
+    "Empresa": pagina_empresa,
+    "Clientes": pagina_clientes,
+    "Produtos": pagina_produtos,
+    "Vendas": pagina_vendas,
+    "Cancelar Venda": pagina_cancelar_venda,
+    "Relatórios": pagina_relatorios
+}
+
 if not st.session_state.logado:
     pagina_login()
-
-with st.sidebar:
-    st.title("🍟 NS Lanches")
-    if st.button("Início"):
-        st.session_state.pagina = "Início"
-    if st.button("Empresa"):
-        st.session_state.pagina = "Empresa"
-    if st.button("Clientes"):
-        st.session_state.pagina = "Clientes"
-    if st.button("Produtos"):
-        st.session_state.pagina = "Produtos"
-    if st.button("Vendas"):
-        st.session_state.pagina = "Vendas"
-    if st.button("Cancelar Venda"):
-        st.session_state.pagina = "Cancelar Venda"
-    if st.button("Relatórios"):
-        st.session_state.pagina = "Relatórios"
-    
-    st.markdown("---")
-    if st.button("🚪 Sair"):
-        st.session_state.logado = False
-        st.rerun()
-
-
-pagina = st.session_state.get("pagina", "Início")
-if pagina == "Início":
-    pagina_inicio()
-elif pagina == "Empresa":
-    pagina_empresa()
-elif pagina == "Clientes":
-    pagina_clientes()
-elif pagina == "Produtos":
-    pagina_produtos()
-elif pagina == "Vendas":
-    pagina_vendas()
-elif pagina == "Cancelar Venda":
-    pagina_cancelar_venda()
-elif pagina == "Relatórios":
-    pagina_relatorios()
+else:
+    st.sidebar.title("Menu")
+    escolha = st.sidebar.radio("Navegação", list(menu.keys()))
+    st.session_state.pagina = escolha
+    menu[escolha]()
