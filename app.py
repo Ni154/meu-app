@@ -4,7 +4,6 @@ from datetime import datetime
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 import io
-import os
 import pandas as pd
 import plotly.express as px
 import uuid
@@ -80,7 +79,7 @@ if cursor.fetchone()[0] == 0:
     cursor.execute("INSERT INTO usuarios (usuario, senha) VALUES (?, ?)", ("admin", "1234"))
     conn.commit()
 
-# Funções de páginas
+# Páginas do sistema
 def pagina_inicio():
     st.subheader("🍔 Bem-vindo ao sistema de vendas NS Lanches")
     st.write("Utilize o menu lateral para navegar entre as funcionalidades.")
@@ -249,6 +248,51 @@ def pagina_vendas():
     else:
         st.info("Cadastre clientes antes de vender")
 
+def pagina_cancelar_venda():
+    st.subheader("❌ Cancelar Venda")
+
+    # Pega os pedidos ativos agrupados por pedido_id, cliente e data
+    pedidos = cursor.execute("""
+        SELECT pedido_id, cliente, MIN(data) as data_inicial
+        FROM vendas
+        WHERE status = 'Ativa' AND pedido_id IS NOT NULL
+        GROUP BY pedido_id, cliente
+        ORDER BY data_inicial DESC
+    """).fetchall()
+
+    if not pedidos:
+        st.info("Não há vendas ativas para cancelar.")
+        return
+
+    pedido_options = [f"Pedido: {p[0]} | Cliente: {p[1]} | Data: {p[2]}" for p in pedidos]
+    pedido_selecionado = st.selectbox("Selecione o pedido para cancelar", pedido_options)
+
+    if st.button("Cancelar Venda Selecionada"):
+        idx = pedido_options.index(pedido_selecionado)
+        pedido_id = pedidos[idx][0]
+
+        # Confirmação
+        if st.confirm("Tem certeza que deseja cancelar esta venda?"):
+            try:
+                # Buscar todos os itens da venda
+                itens_venda = cursor.execute(
+                    "SELECT produto, quantidade FROM vendas WHERE pedido_id = ? AND status = 'Ativa'", (pedido_id,)
+                ).fetchall()
+
+                # Atualiza status para Cancelada
+                cursor.execute(
+                    "UPDATE vendas SET status = 'Cancelada' WHERE pedido_id = ? AND status = 'Ativa'", (pedido_id,)
+                )
+
+                # Repor o estoque
+                for produto, quantidade in itens_venda:
+                    cursor.execute("UPDATE produtos SET estoque = estoque + ? WHERE nome = ?", (quantidade, produto))
+
+                conn.commit()
+                st.success(f"Venda {pedido_id} cancelada com sucesso!")
+            except Exception as e:
+                st.error(f"Erro ao cancelar venda: {e}")
+
 def pagina_relatorios():
     st.subheader("📊 Relatórios")
     opcao = st.radio("Escolha o tipo de relatório:", ["Relatório de Vendas", "Relatório de Estoque"])
@@ -326,6 +370,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# Login
 if "logado" not in st.session_state:
     st.session_state.logado = False
 if not st.session_state.logado:
@@ -362,6 +407,8 @@ with st.sidebar:
         st.session_state.pagina = "Produtos"
     if st.button("Vendas"):
         st.session_state.pagina = "Vendas"
+    if st.button("Cancelar Venda"):
+        st.session_state.pagina = "Cancelar Venda"
     if st.button("Relatórios"):
         st.session_state.pagina = "Relatórios"
 
@@ -377,5 +424,7 @@ elif pagina == "Produtos":
     pagina_produtos()
 elif pagina == "Vendas":
     pagina_vendas()
+elif pagina == "Cancelar Venda":
+    pagina_cancelar_venda()
 elif pagina == "Relatórios":
     pagina_relatorios()
