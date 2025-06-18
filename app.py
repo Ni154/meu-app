@@ -8,19 +8,24 @@ import pandas as pd
 import plotly.express as px
 import uuid
 
-# Inicializa banco de dados
+# Conexao com banco de dados
 conn = sqlite3.connect("sistema.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# Criação das tabelas se não existirem
+# Cria tabelas se não existirem
 cursor.execute("""
-CREATE TABLE IF NOT EXISTS empresa (
+CREATE TABLE IF NOT EXISTS usuarios (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT NOT NULL,
-    cnpj TEXT NOT NULL
+    usuario TEXT NOT NULL,
+    senha TEXT NOT NULL
 )
 """)
+cursor.execute("SELECT COUNT(*) FROM usuarios")
+if cursor.fetchone()[0] == 0:
+    cursor.execute("INSERT INTO usuarios (usuario, senha) VALUES (?, ?)", ("admin", "1234"))
+    conn.commit()
 
+# Cria outras tabelas
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS clientes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,14 +49,6 @@ CREATE TABLE IF NOT EXISTS produtos (
 """)
 
 cursor.execute("""
-CREATE TABLE IF NOT EXISTS usuarios (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    usuario TEXT NOT NULL,
-    senha TEXT NOT NULL
-)
-""")
-
-cursor.execute("""
 CREATE TABLE IF NOT EXISTS vendas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     data TEXT,
@@ -63,95 +60,82 @@ CREATE TABLE IF NOT EXISTS vendas (
     pedido_id TEXT
 )
 """)
-
 conn.commit()
 
-# Cria um usuário padrão se não existir
-cursor.execute("SELECT COUNT(*) FROM usuarios")
-if cursor.fetchone()[0] == 0:
-    cursor.execute("INSERT INTO usuarios (usuario, senha) VALUES (?, ?)", ("admin", "1234"))
-    conn.commit()
-
-# Configurações de tema
-if "cor_fundo" not in st.session_state:
-    st.session_state.cor_fundo = "#FFFFFF"  # Branco padrão
-if "cor_menu" not in st.session_state:
-    st.session_state.cor_menu = "#F9A825"  # Amarelo mostarda padrão
-if "show_config" not in st.session_state:
-    st.session_state.show_config = False
+# Estado inicial
 if "logado" not in st.session_state:
     st.session_state.logado = False
+if "logo" not in st.session_state:
+    st.session_state.logo = None
+if "show_config" not in st.session_state:
+    st.session_state.show_config = False
+if "cor_fundo" not in st.session_state:
+    st.session_state.cor_fundo = "#FFFFFF"
+if "cor_menu" not in st.session_state:
+    st.session_state.cor_menu = "#F9A825"
+if "pagina" not in st.session_state:
+    st.session_state.pagina = "Início"
 
-def aplicar_estilos():
-    st.markdown(f"""
+# Estilos
+st.set_page_config(layout="wide", page_title="NS Lanches")
+st.markdown(f"""
     <style>
-    /* Fundo da aplicação */
-    .css-1d391kg {{
-        background-color: {st.session_state.cor_fundo} !important;
-    }}
-    /* Menu lateral */
-    .css-1v3fvcr {{
-        background-color: {st.session_state.cor_menu} !important;
-    }}
-    /* Botão personalizado */
-    .stButton>button {{
-        background-color: #FF8C00;
-        color: white;
-        border: none;
-        padding: 10px 20px;
-        border-radius: 8px;
-        font-size: 16px;
-        margin-bottom: 10px;
-    }}
-    .stButton>button:hover {{
-        background-color: #e67e00;
-    }}
-    /* Sidebar container */
-    .sidebar .block-container {{
-        background-color: rgba(255, 255, 255, 0.8);
-        padding: 10px;
-        border-radius: 10px;
-    }}
-    /* Ícone configuração fixo topo direito */
-    #botao_config {{
-        position: fixed;
-        top: 10px;
-        right: 10px;
-        font-size: 25px;
-        cursor: pointer;
-        z-index: 9999;
-        color: #FF8C00;
-    }}
+        .stApp {{
+            background-color: {st.session_state.cor_fundo};
+        }}
+        .css-1d391kg {{
+            background-color: {st.session_state.cor_menu};
+        }}
+        .stButton>button {{
+            background-color: #FF8C00;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }}
+        .stButton>button:hover {{
+            background-color: #e67e00;
+        }}
+        .sidebar .block-container {{
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 10px;
+        }}
+        .login-logo {{
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }}
     </style>
-    """, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
+# Painel de configurações de cor
 def painel_configuracoes():
     st.subheader("⚙️ Configurações")
-
     cor_fundo = st.color_picker("Cor do Fundo", st.session_state.cor_fundo)
     cor_menu = st.color_picker("Cor do Menu Lateral", st.session_state.cor_menu)
-
     if st.button("Aplicar cores"):
         st.session_state.cor_fundo = cor_fundo
         st.session_state.cor_menu = cor_menu
         st.experimental_rerun()
 
+# Página de login com logo discreta
 def pagina_login():
-    st.markdown("""
-        <style>
-        .login_logo {
-            display: flex;
-            justify-content: center;
-            margin-bottom: 20px;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-    logo_upload = st.file_uploader("Faça upload da logo da empresa (PNG, JPG)", type=["png", "jpg", "jpeg"], key="logo_login")
-    if logo_upload:
-        st.image(logo_upload, width=200)
-        st.session_state.logo = logo_upload
-
     st.title("🍔 NS Lanches - Login")
+
+    if st.session_state.logo:
+        st.image(st.session_state.logo, width=200)
+        if st.button("🔁 Trocar logo"):
+            st.session_state.logo = None
+            st.experimental_rerun()
+    else:
+        logo_upload = st.file_uploader("Upload da logo da empresa", type=["png", "jpg", "jpeg"], key="logo_login")
+        if logo_upload:
+            st.session_state.logo = logo_upload
+            st.experimental_rerun()
+
     usuario = st.text_input("Usuário")
     senha = st.text_input("Senha", type="password")
     if st.button("Entrar"):
@@ -163,37 +147,85 @@ def pagina_login():
             st.error("Usuário ou senha incorretos")
     st.stop()
 
+# Página inicial
 def pagina_inicio():
     st.subheader("🍔 Bem-vindo ao sistema de vendas NS Lanches")
     st.write("Utilize o menu lateral para navegar entre as funcionalidades.")
 
-# ... (Você pode incluir as outras funções que deseja para o cadastro, vendas, relatórios, cancelamento aqui)
+# Placeholder para outras páginas
 
-def main():
-    st.set_page_config(layout="wide", page_title="NS Lanches")
-    aplicar_estilos()
+def pagina_empresa():
+    st.subheader("🏢 Cadastro de Empresa")
+    # Conteúdo omitido para foco
 
-    if not st.session_state.logado:
-        pagina_login()
-        return
+def pagina_clientes():
+    st.subheader("👥 Cadastro de Clientes")
+    # Conteúdo omitido para foco
 
-    # Ícone fixo para abrir/fechar configurações
-    if st.button("⚙️", key="botao_config"):
+def pagina_produtos():
+    st.subheader("🍟 Cadastro de Produtos")
+    # Conteúdo omitido para foco
+
+def pagina_vendas():
+    st.subheader("🧾 Registrar Venda")
+    # Conteúdo omitido para foco
+
+def pagina_cancelar_venda():
+    st.subheader("❌ Cancelar Venda")
+    # Conteúdo omitido para foco
+
+def pagina_relatorios():
+    st.subheader("📊 Relatórios")
+    # Conteúdo omitido para foco
+
+# Executa login se necessário
+if not st.session_state.logado:
+    pagina_login()
+
+# Ícone de configurações
+st.markdown('<div style="text-align:right;">⚙️</div>', unsafe_allow_html=True)
+if st.button("Abrir Configurações"):
+    st.session_state.show_config = not st.session_state.show_config
+
+# Menu lateral
+with st.sidebar:
+    st.title("🍟 NS Lanches")
+    if st.session_state.logo:
+        st.image(st.session_state.logo, width=200)
+    if st.button("Início"):
+        st.session_state.pagina = "Início"
+    if st.button("Empresa"):
+        st.session_state.pagina = "Empresa"
+    if st.button("Clientes"):
+        st.session_state.pagina = "Clientes"
+    if st.button("Produtos"):
+        st.session_state.pagina = "Produtos"
+    if st.button("Vendas"):
+        st.session_state.pagina = "Vendas"
+    if st.button("Cancelar Venda"):
+        st.session_state.pagina = "Cancelar Venda"
+    if st.button("Relatórios"):
+        st.session_state.pagina = "Relatórios"
+    if st.button("Configurações"):
         st.session_state.show_config = not st.session_state.show_config
 
-    # Sidebar para navegação
-    with st.sidebar:
-        st.title("Menu")
-        pagina = st.radio("Escolha a página", ["Início", "Configurações"])
-        if pagina == "Início":
-            pagina_inicio()
-        elif pagina == "Configurações":
-            painel_configuracoes()
+# Painel de configurações
+if st.session_state.show_config:
+    painel_configuracoes()
 
-    # Painel de configurações flutuante
-    if st.session_state.show_config:
-        with st.sidebar.expander("Configurações Avançadas", expanded=True):
-            painel_configuracoes()
-
-if __name__ == "__main__":
-    main()
+# Exibir página selecionada
+pagina = st.session_state.get("pagina", "Início")
+if pagina == "Início":
+    pagina_inicio()
+elif pagina == "Empresa":
+    pagina_empresa()
+elif pagina == "Clientes":
+    pagina_clientes()
+elif pagina == "Produtos":
+    pagina_produtos()
+elif pagina == "Vendas":
+    pagina_vendas()
+elif pagina == "Cancelar Venda":
+    pagina_cancelar_venda()
+elif pagina == "Relatórios":
+    pagina_relatorios()
