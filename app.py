@@ -222,6 +222,15 @@ def pagina_vendas():
         if st.button("Finalizar Venda"):
             data_venda = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             pedido_id = datetime.now().strftime("%Y%m%d%H%M%S") + str(uuid.uuid4())[:6]
+
+            # Busca dados completos do cliente
+            cursor.execute("SELECT nome, cpf, telefone, endereco FROM clientes WHERE nome=?", (cliente,))
+            dados_cliente = cursor.fetchone()
+            nome_cliente = dados_cliente[0]
+            cpf_cliente = dados_cliente[1]
+            telefone_cliente = dados_cliente[2]
+            endereco_cliente = dados_cliente[3]
+
             for produto, quantidade in st.session_state.carrinho.items():
                 preco_unit = next(p[1] for p in produtos_info if p[0] == produto)
                 total_produto = preco_unit * quantidade
@@ -243,11 +252,14 @@ def pagina_vendas():
 
             c.setFont("Helvetica", 12)
             c.drawString(50, height - 90, f"Data: {data_venda}")
-            c.drawString(50, height - 110, f"Cliente: {cliente}")
-            c.drawString(50, height - 130, f"Pedido ID: {pedido_id}")
+            c.drawString(50, height - 110, f"Cliente: {nome_cliente}")
+            c.drawString(50, height - 130, f"CPF: {cpf_cliente}")
+            c.drawString(50, height - 150, f"Telefone: {telefone_cliente}")
+            c.drawString(50, height - 170, f"Endereço: {endereco_cliente}")
+            c.drawString(50, height - 190, f"Pedido ID: {pedido_id}")
 
             # Cabeçalho da tabela
-            y = height - 160
+            y = height - 220
             c.setFont("Helvetica-Bold", 12)
             c.drawString(50, y, "Produto")
             c.drawString(280, y, "Qtde")
@@ -259,7 +271,7 @@ def pagina_vendas():
 
             # Itens
             c.setFont("Helvetica", 12)
-            y -= 25
+            y -= 30
             total = 0
             for produto, qtde in st.session_state.carrinho.items():
                 preco_unit = next(p[1] for p in produtos_info if p[0] == produto)
