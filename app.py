@@ -8,11 +8,11 @@ import pandas as pd
 import plotly.express as px
 import uuid
 
-# Conexão com banco de dados
+# Conexao com banco de dados
 conn = sqlite3.connect("sistema.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# Criação das tabelas
+# Cria tabelas se não existirem
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS usuarios (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,7 +69,6 @@ CREATE TABLE IF NOT EXISTS vendas (
 """)
 conn.commit()
 
-# Estado inicial
 if "logado" not in st.session_state:
     st.session_state.logado = False
 if "cor_fundo" not in st.session_state:
@@ -79,7 +78,6 @@ if "cor_menu" not in st.session_state:
 if "pagina" not in st.session_state:
     st.session_state.pagina = "Início"
 
-# Estilo customizado para cores dinâmicas
 st.set_page_config(layout="wide", page_title="NS Lanches")
 st.markdown(f"""
     <style>
@@ -88,7 +86,16 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-# Páginas
+with st.sidebar:
+    st.markdown("---")
+    st.subheader("⚙️ Configurações")
+    cor_fundo = st.color_picker("Cor do Fundo", st.session_state.cor_fundo)
+    cor_menu = st.color_picker("Cor do Menu Lateral", st.session_state.cor_menu)
+    if st.button("Aplicar cores"):
+        st.session_state.cor_fundo = cor_fundo
+        st.session_state.cor_menu = cor_menu
+        st.experimental_rerun()
+
 def pagina_login():
     st.title("🍔 NS Lanches - Login")
     usuario = st.text_input("Usuário")
@@ -104,8 +111,7 @@ def pagina_login():
             st.error("Usuário ou senha incorretos")
 
     if not st.session_state.logado:
-        st.stop()  # Para de rodar o resto do app até que faça login
-
+        st.stop()  # Para o app até login ser realizado
 
 def pagina_inicio():
     st.subheader("🍔 Bem-vindo ao sistema de vendas NS Lanches")
@@ -236,30 +242,10 @@ def pagina_relatorios():
     buffer.seek(0)
     st.download_button("📥 Baixar Relatório PDF", buffer, file_name="relatorio_vendas.pdf")
 
-# NOVO: Painel Administrativo
-def pagina_admin():
-    st.subheader("📊 Painel Administrativo")
-    
-    total_vendas = cursor.execute("SELECT SUM(total) FROM vendas WHERE status='Ativa'").fetchone()[0] or 0
-    total_clientes = cursor.execute("SELECT COUNT(*) FROM clientes").fetchone()[0]
-    total_produtos = cursor.execute("SELECT COUNT(*) FROM produtos").fetchone()[0]
-    
-    st.metric("💰 Total Vendido", f"R$ {total_vendas:.2f}")
-    st.metric("👥 Clientes Cadastrados", total_clientes)
-    st.metric("📦 Produtos Cadastrados", total_produtos)
-
-    st.markdown("### ⚠️ Produtos com Estoque Baixo (≤ 5 unidades)")
-    estoque_baixo = pd.read_sql("SELECT nome, estoque FROM produtos WHERE estoque <= 5", conn)
-    if not estoque_baixo.empty:
-        st.dataframe(estoque_baixo)
-    else:
-        st.write("Nenhum produto com estoque baixo.")
-
-# Login
+# Fluxo principal
 if not st.session_state.logado:
     pagina_login()
 
-# Menu lateral
 with st.sidebar:
     st.title("🍟 NS Lanches")
     if st.button("Início"):
@@ -276,12 +262,8 @@ with st.sidebar:
         st.session_state.pagina = "Cancelar Venda"
     if st.button("Relatórios"):
         st.session_state.pagina = "Relatórios"
-    if st.button("Painel Admin"):
-        st.session_state.pagina = "Admin"
 
-# Navegação entre páginas
 pagina = st.session_state.get("pagina", "Início")
-
 if pagina == "Início":
     pagina_inicio()
 elif pagina == "Empresa":
@@ -296,5 +278,3 @@ elif pagina == "Cancelar Venda":
     pagina_cancelar_venda()
 elif pagina == "Relatórios":
     pagina_relatorios()
-elif pagina == "Admin":
-    pagina_admin()
