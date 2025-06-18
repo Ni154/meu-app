@@ -111,6 +111,7 @@ def pagina_login():
 
 def pagina_inicio():
     st.subheader("📊 Painel Administrativo")
+
     total_clientes = cursor.execute("SELECT COUNT(*) FROM clientes").fetchone()[0]
     total_vendas = cursor.execute("SELECT SUM(total) FROM vendas WHERE status='Ativa'").fetchone()[0] or 0
     produtos = cursor.execute("SELECT nome, estoque FROM produtos").fetchall()
@@ -126,6 +127,7 @@ def pagina_inicio():
             st.write(f"- {p}")
     else:
         st.success("Todos os produtos estão com estoque disponível.")
+
 
 def pagina_empresa():
     st.subheader("🏢 Cadastro de Empresa")
