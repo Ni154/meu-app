@@ -7,6 +7,7 @@ import io
 import os
 import pandas as pd
 import plotly.express as px
+import uuid
 
 # Inicializa banco de dados
 conn = sqlite3.connect("sistema.db", check_same_thread=False)
@@ -51,7 +52,6 @@ CREATE TABLE IF NOT EXISTS usuarios (
 )
 """)
 
-# Criação da tabela vendas com campo status
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS vendas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,16 +60,18 @@ CREATE TABLE IF NOT EXISTS vendas (
     cliente TEXT,
     quantidade INTEGER,
     total REAL,
-    status TEXT DEFAULT 'Ativa'
+    status TEXT DEFAULT 'Ativa',
+    pedido_id TEXT
 )
 """)
+
 conn.commit()
 
-# Se a coluna 'status' não existir (caso a tabela seja antiga), adiciona ela
+# Verifica se coluna pedido_id existe na tabela vendas, se não existir adiciona
 cursor.execute("PRAGMA table_info(vendas)")
 colunas = [info[1] for info in cursor.fetchall()]
-if "status" not in colunas:
-    cursor.execute("ALTER TABLE vendas ADD COLUMN status TEXT DEFAULT 'Ativa'")
+if "pedido_id" not in colunas:
+    cursor.execute("ALTER TABLE vendas ADD COLUMN pedido_id TEXT")
     conn.commit()
 
 # Cria um usuário padrão se não existir
@@ -81,10 +83,6 @@ if cursor.fetchone()[0] == 0:
 # Funções de páginas
 def pagina_inicio():
     st.subheader("🍔 Bem-vindo ao sistema de vendas NS Lanches")
-    empresa = cursor.execute("SELECT nome, cnpj FROM empresa ORDER BY id DESC LIMIT 1").fetchone()
-    if empresa:
-        st.write(f"Empresa: **{empresa[0]}**")
-        st.write(f"CNPJ: **{empresa[1]}**")
     st.write("Utilize o menu lateral para navegar entre as funcionalidades.")
 
 def pagina_empresa():
@@ -140,87 +138,116 @@ def pagina_produtos():
             st.warning("Preencha os campos obrigatórios.")
 
 def pagina_vendas():
-    st.subheader("🧾 Registrar Venda")
-    produtos = [row[0] for row in cursor.execute("SELECT nome FROM produtos WHERE estoque > 0").fetchall()]
+    st.subheader("🧾 Registrar Venda com múltiplos produtos")
+
     clientes = [row[0] for row in cursor.execute("SELECT nome FROM clientes").fetchall()]
     formas_pagamento = ["Dinheiro", "Cartão", "PIX"]
 
-    if produtos and clientes:
-        produto = st.selectbox("Produto", produtos)
-        produto_info = cursor.execute("SELECT preco, estoque, unidade, categoria FROM produtos WHERE nome=?", (produto,)).fetchone()
-        st.write(f"**Preço:** R$ {produto_info[0]} | **Estoque:** {produto_info[1]} | **Unidade:** {produto_info[2]} | **Categoria:** {produto_info[3]}")
+    if "carrinho" not in st.session_state:
+        st.session_state.carrinho = []
 
+    if clientes:
         cliente = st.selectbox("Cliente", clientes)
-        cliente_info = cursor.execute("SELECT telefone, endereco FROM clientes WHERE nome=?", (cliente,)).fetchone()
-        st.write(f"**Telefone:** {cliente_info[0]} | **Endereço:** {cliente_info[1]}")
-
         forma_pagamento = st.selectbox("Forma de Pagamento", formas_pagamento)
+
+        produtos_disponiveis = cursor.execute("SELECT nome, preco, estoque, unidade, categoria FROM produtos WHERE estoque > 0").fetchall()
+        produtos = [p[0] for p in produtos_disponiveis]
+
+        produto_selecionado = st.selectbox("Produto", produtos)
         quantidade = st.number_input("Quantidade", min_value=1, step=1)
 
-        if st.button("Finalizar Venda"):
-            preco, estoque = produto_info[0], produto_info[1]
-            if quantidade > estoque:
-                st.warning("Estoque insuficiente")
+        preco_produto = next(p[1] for p in produtos_disponiveis if p[0] == produto_selecionado)
+        estoque_produto = next(p[2] for p in produtos_disponiveis if p[0] == produto_selecionado)
+        unidade_produto = next(p[3] for p in produtos_disponiveis if p[0] == produto_selecionado)
+        categoria_produto = next(p[4] for p in produtos_disponiveis if p[0] == produto_selecionado)
+
+        st.write(f"**Preço:** R$ {preco_produto:.2f} | **Estoque:** {estoque_produto} | **Unidade:** {unidade_produto} | **Categoria:** {categoria_produto}")
+
+        if quantidade > estoque_produto:
+            st.warning("Estoque insuficiente para essa quantidade")
+
+        if st.button("Adicionar ao Carrinho"):
+            if quantidade <= estoque_produto:
+                # Verifica se produto já está no carrinho, soma quantidade se sim
+                achou = False
+                for item in st.session_state.carrinho:
+                    if item["produto"] == produto_selecionado:
+                        item["quantidade"] += quantidade
+                        achou = True
+                        break
+                if not achou:
+                    st.session_state.carrinho.append({
+                        "produto": produto_selecionado,
+                        "quantidade": quantidade,
+                        "preco": preco_produto
+                    })
+                st.success(f"Produto {produto_selecionado} adicionado ao carrinho.")
             else:
-                total = quantidade * preco
+                st.error("Quantidade maior que estoque disponível.")
+
+        # Mostrar carrinho
+        if st.session_state.carrinho:
+            st.write("### Carrinho de compras")
+            df_carrinho = pd.DataFrame(st.session_state.carrinho)
+            df_carrinho["total"] = df_carrinho["quantidade"] * df_carrinho["preco"]
+            st.dataframe(df_carrinho[["produto", "quantidade", "preco", "total"]])
+
+            total_geral = df_carrinho["total"].sum()
+            st.write(f"**Total Geral: R$ {total_geral:.2f}**")
+
+            if st.button("Finalizar Venda"):
+                pedido_id = datetime.now().strftime("%Y%m%d%H%M%S") + str(uuid.uuid4())[:8]
                 data_venda = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
                 try:
-                    cursor.execute(
-                        "INSERT INTO vendas (data, produto, cliente, quantidade, total, status) VALUES (?, ?, ?, ?, ?, ?)",
-                        (data_venda, produto, cliente, quantidade, total, "Ativa")
-                    )
-                    cursor.execute("UPDATE produtos SET estoque=estoque-? WHERE nome=?", (quantidade, produto))
+                    for item in st.session_state.carrinho:
+                        produto = item["produto"]
+                        quantidade = item["quantidade"]
+                        preco = item["preco"]
+                        total = quantidade * preco
+
+                        # Inserir cada produto como uma venda separada, mas com mesmo pedido_id
+                        cursor.execute(
+                            "INSERT INTO vendas (data, produto, cliente, quantidade, total, status, pedido_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            (data_venda, produto, cliente, quantidade, total, "Ativa", pedido_id)
+                        )
+                        # Atualizar estoque
+                        cursor.execute("UPDATE produtos SET estoque = estoque - ? WHERE nome = ?", (quantidade, produto))
+
                     conn.commit()
 
+                    # Gerar comprovante PDF com todos os produtos
                     buffer = io.BytesIO()
                     c = canvas.Canvas(buffer, pagesize=A4)
                     c.drawString(100, 800, "NS LANCHES - COMPROVANTE DE VENDA")
                     c.drawString(100, 780, f"Data: {data_venda}")
                     c.drawString(100, 760, f"Cliente: {cliente}")
+                    # Pega telefone e endereço do cliente
+                    cliente_info = cursor.execute("SELECT telefone, endereco FROM clientes WHERE nome=?", (cliente,)).fetchone()
                     c.drawString(100, 740, f"Endereço: {cliente_info[1]}")
                     c.drawString(100, 720, f"Telefone: {cliente_info[0]}")
-                    c.drawString(100, 700, f"Produto: {produto}")
-                    c.drawString(100, 680, f"Quantidade: {quantidade}")
-                    c.drawString(100, 660, f"Forma de Pagamento: {forma_pagamento}")
-                    c.drawString(100, 640, f"Total: R$ {total:.2f}")
+                    c.drawString(100, 700, f"Forma de Pagamento: {forma_pagamento}")
+                    y = 680
+                    for item in st.session_state.carrinho:
+                        linha = f"Produto: {item['produto']} | Qtde: {item['quantidade']} | Preço: R$ {item['preco']:.2f} | Total: R$ {item['quantidade']*item['preco']:.2f}"
+                        c.drawString(100, y, linha)
+                        y -= 20
+                        if y < 50:
+                            c.showPage()
+                            y = 800
+                    c.drawString(100, y, f"Total Geral: R$ {total_geral:.2f}")
                     c.save()
                     buffer.seek(0)
 
                     st.download_button("📥 Baixar Comprovante em PDF", buffer.getvalue(), file_name="comprovante.pdf")
-                    st.success("Venda registrada com sucesso")
+                    st.success("Venda finalizada com sucesso!")
+
+                    # Limpa carrinho
+                    st.session_state.carrinho = []
                 except Exception as e:
-                    st.error(f"Erro ao registrar venda: {e}")
+                    st.error(f"Erro ao finalizar venda: {e}")
     else:
-        st.info("Cadastre produtos com estoque disponível e clientes antes de vender")
-
-def pagina_cancelar_vendas():
-    st.subheader("❌ Cancelar Venda")
-
-    vendas_ativas = cursor.execute("SELECT id, data, produto, cliente, quantidade, total FROM vendas WHERE status='Ativa'").fetchall()
-    if vendas_ativas:
-        opcoes = [f"ID {v[0]} | {v[1]} | {v[2]} | Cliente: {v[3]} | Qtde: {v[4]} | Total: R$ {v[5]:.2f}" for v in vendas_ativas]
-        venda_selecionada = st.selectbox("Selecione a venda para cancelar:", opcoes)
-        id_venda = int(venda_selecionada.split("|")[0].split()[1])  # extrai ID
-
-        if st.button("Cancelar Venda Selecionada"):
-            try:
-                # Atualiza status da venda para "Cancelada"
-                cursor.execute("UPDATE vendas SET status='Cancelada' WHERE id=?", (id_venda,))
-                
-                # Recupera os dados da venda para estornar o estoque
-                venda = cursor.execute("SELECT produto, quantidade FROM vendas WHERE id=?", (id_venda,)).fetchone()
-                produto, quantidade = venda
-                
-                # Estorna o estoque (soma a quantidade cancelada)
-                cursor.execute("UPDATE produtos SET estoque = estoque + ? WHERE nome=?", (quantidade, produto))
-                
-                conn.commit()
-                st.success(f"Venda ID {id_venda} cancelada com sucesso e estoque atualizado.")
-            except Exception as e:
-                st.error(f"Erro ao cancelar venda: {e}")
-    else:
-        st.info("Não há vendas ativas para cancelar.")
+        st.info("Cadastre clientes antes de vender")
 
 def pagina_relatorios():
     st.subheader("📊 Relatórios")
@@ -230,32 +257,18 @@ def pagina_relatorios():
         data_inicio = st.date_input("Data inicial")
         data_fim = st.date_input("Data final")
         vendas = cursor.execute("SELECT data, produto, cliente, quantidade, total, status FROM vendas").fetchall()
+        df = [v for v in vendas if data_inicio.strftime("%Y-%m-%d") <= v[0][:10] <= data_fim.strftime("%Y-%m-%d")]
 
-        data_inicio_dt = datetime.combine(data_inicio, datetime.min.time())
-        data_fim_dt = datetime.combine(data_fim, datetime.max.time())
-
-        df = [v for v in vendas if data_inicio_dt <= datetime.strptime(v[0], "%Y-%m-%d %H:%M:%S") <= data_fim_dt]
-
+        st.write("### Vendas no Período")
         df_vendas = pd.DataFrame(df, columns=["Data", "Produto", "Cliente", "Quantidade", "Total", "Status"])
-
-        # Mostrar na tabela, com destaque para canceladas
-        def formatar_status(s):
-            if s == "Cancelada":
-                return "⚠️ Cancelada"
-            return "Ativa"
-
-        df_vendas["Status"] = df_vendas["Status"].apply(formatar_status)
-
         st.dataframe(df_vendas)
 
-        total = df_vendas[df_vendas["Status"] == "Ativa"]["Total"].sum()
-        st.success(f"Total vendido no período (sem vendas canceladas): R$ {total:.2f}")
+        total = sum([v[4] for v in df if v[5] == "Ativa"])
+        st.success(f"Total vendido no período (vendas ativas): R$ {total:.2f}")
 
-        # Gráfico só com vendas ativas
-        df_ativas = df_vendas[df_vendas["Status"] == "Ativa"]
-        if not df_ativas.empty:
-            df_ativas["Data"] = pd.to_datetime(df_ativas["Data"])
-            grafico = px.bar(df_ativas, x="Data", y="Total", color="Produto", title="Vendas por Produto")
+        if not df_vendas.empty:
+            df_vendas["Data"] = pd.to_datetime(df_vendas["Data"])
+            grafico = px.bar(df_vendas[df_vendas["Status"]=="Ativa"], x="Data", y="Total", color="Produto", title="Vendas por Produto (Ativas)")
             st.plotly_chart(grafico)
 
             buffer_pdf = io.BytesIO()
@@ -264,16 +277,14 @@ def pagina_relatorios():
             pdf.drawString(100, 780, f"Período: {data_inicio} até {data_fim}")
             y = 760
             for v in df:
-                status = "Cancelada" if v[5] == "Cancelada" else "Ativa"
-                linha = f"{v[0]} - {v[1]} - {v[2]} - Qtde: {v[3]} - R$ {v[4]:.2f} - {status}"
+                linha = f"{v[0]} - {v[1]} - {v[2]} - Qtde: {v[3]} - R$ {v[4]:.2f} - Status: {v[5]}"
                 pdf.drawString(100, y, linha)
                 y -= 20
                 if y < 50:
                     pdf.showPage()
                     y = 800
-            pdf.drawString(100, y, f"Total vendido: R$ {total:.2f}")
+            pdf.drawString(100, y, f"Total vendido (Ativas): R$ {total:.2f}")
             pdf.save()
-            buffer_pdf.seek(0)
 
             st.download_button("📥 Baixar Relatório em PDF", buffer_pdf.getvalue(), file_name="relatorio_vendas.pdf")
 
@@ -351,8 +362,6 @@ with st.sidebar:
         st.session_state.pagina = "Produtos"
     if st.button("Vendas"):
         st.session_state.pagina = "Vendas"
-    if st.button("Cancelar Venda"):
-        st.session_state.pagina = "Cancelar Venda"
     if st.button("Relatórios"):
         st.session_state.pagina = "Relatórios"
 
@@ -368,7 +377,5 @@ elif pagina == "Produtos":
     pagina_produtos()
 elif pagina == "Vendas":
     pagina_vendas()
-elif pagina == "Cancelar Venda":
-    pagina_cancelar_vendas()
 elif pagina == "Relatórios":
     pagina_relatorios()
