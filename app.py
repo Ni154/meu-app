@@ -173,47 +173,86 @@ def pagina_produtos():
 
 def pagina_vendas():
     st.subheader("🧾 Registrar Venda")
+
     clientes = [c[0] for c in cursor.execute("SELECT nome FROM clientes").fetchall()]
     produtos_info = cursor.execute("SELECT nome, preco, estoque FROM produtos WHERE estoque > 0").fetchall()
+
     if not clientes or not produtos_info:
         st.info("Cadastre clientes e produtos antes de registrar vendas")
         return
 
     cliente = st.selectbox("Cliente", clientes)
-    produtos_selecionados = st.multiselect("Produtos", [p[0] for p in produtos_info])
-    quantidades = {}
-    total = 0
-    for prod in produtos_selecionados:
-        prod_info = next(p for p in produtos_info if p[0] == prod)
-        quantidade = st.number_input(f"Quantidade de {prod}", min_value=1, max_value=prod_info[2], step=1)
-        quantidades[prod] = quantidade
-        total += quantidade * prod_info[1]
 
-    if st.button("Finalizar Venda"):
-        data_venda = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        pedido_id = datetime.now().strftime("%Y%m%d%H%M%S") + str(uuid.uuid4())[:6]
-        for produto, quantidade in quantidades.items():
-            preco_unit = next(p for p in produtos_info if p[0] == produto)[1]
-            total_produto = preco_unit * quantidade
-            cursor.execute("INSERT INTO vendas (data, produto, cliente, quantidade, total, pedido_id) VALUES (?, ?, ?, ?, ?, ?)", (data_venda, produto, cliente, quantidade, total_produto, pedido_id))
-            cursor.execute("UPDATE produtos SET estoque = estoque - ? WHERE nome = ?", (quantidade, produto))
-        conn.commit()
+    # Inicializa o carrinho na sessão
+    if "carrinho" not in st.session_state:
+        st.session_state.carrinho = {}
 
-        st.success("Venda registrada com sucesso!")
-        buffer = io.BytesIO()
-        c = canvas.Canvas(buffer, pagesize=A4)
-        c.drawString(100, 800, f"Comprovante - NS Lanches")
-        c.drawString(100, 780, f"Data: {data_venda}")
-        c.drawString(100, 760, f"Cliente: {cliente}")
-        y = 740
-        for produto, qtd in quantidades.items():
-            preco_unit = next(p for p in produtos_info if p[0] == produto)[1]
-            c.drawString(100, y, f"Produto: {produto} | Qtde: {qtd} | Unit: R$ {preco_unit:.2f}")
-            y -= 20
-        c.drawString(100, y, f"Total: R$ {total:.2f}")
-        c.save()
-        buffer.seek(0)
-        st.download_button("📥 Baixar Comprovante PDF", buffer, file_name="comprovante.pdf")
+    # Seleciona produto e quantidade para adicionar ao carrinho
+    col1, col2 = st.columns([3,1])
+    with col1:
+        produto_selecionado = st.selectbox("Selecione o Produto para adicionar", [p[0] for p in produtos_info])
+    with col2:
+        estoque_prod = next(p[2] for p in produtos_info if p[0] == produto_selecionado)
+        quantidade = st.number_input("Quantidade", min_value=1, max_value=estoque_prod, step=1, key="qtde_add")
+
+    if st.button("Adicionar ao Carrinho"):
+        if produto_selecionado in st.session_state.carrinho:
+            # Soma a quantidade se já tiver no carrinho
+            nova_qtde = st.session_state.carrinho[produto_selecionado] + quantidade
+            if nova_qtde <= estoque_prod:
+                st.session_state.carrinho[produto_selecionado] = nova_qtde
+            else:
+                st.warning(f"Estoque insuficiente para adicionar {quantidade} unidades adicionais.")
+        else:
+            st.session_state.carrinho[produto_selecionado] = quantidade
+        st.success(f"{quantidade} x {produto_selecionado} adicionado(s) ao carrinho.")
+
+    # Exibe itens no carrinho
+    st.markdown("### Carrinho de Compras")
+    if st.session_state.carrinho:
+        total = 0
+        for prod, qtde in st.session_state.carrinho.items():
+            preco_unit = next(p[1] for p in produtos_info if p[0] == prod)
+            subtotal = preco_unit * qtde
+            total += subtotal
+            st.write(f"{prod} - Quantidade: {qtde} - Subtotal: R$ {subtotal:.2f}")
+
+        st.markdown(f"**Total da Venda: R$ {total:.2f}**")
+
+        if st.button("Finalizar Venda"):
+            data_venda = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            pedido_id = datetime.now().strftime("%Y%m%d%H%M%S") + str(uuid.uuid4())[:6]
+            for produto, quantidade in st.session_state.carrinho.items():
+                preco_unit = next(p[1] for p in produtos_info if p[0] == produto)
+                total_produto = preco_unit * quantidade
+                cursor.execute("INSERT INTO vendas (data, produto, cliente, quantidade, total, pedido_id) VALUES (?, ?, ?, ?, ?, ?)",
+                               (data_venda, produto, cliente, quantidade, total_produto, pedido_id))
+                cursor.execute("UPDATE produtos SET estoque = estoque - ? WHERE nome = ?", (quantidade, produto))
+            conn.commit()
+
+            # Salva comprovante PDF
+            buffer = io.BytesIO()
+            c = canvas.Canvas(buffer, pagesize=A4)
+            c.drawString(100, 800, f"Comprovante - NS Lanches")
+            c.drawString(100, 780, f"Data: {data_venda}")
+            c.drawString(100, 760, f"Cliente: {cliente}")
+            y = 740
+            for produto, qtde in st.session_state.carrinho.items():
+                preco_unit = next(p[1] for p in produtos_info if p[0] == produto)
+                c.drawString(100, y, f"Produto: {produto} | Qtde: {qtde} | Unit: R$ {preco_unit:.2f}")
+                y -= 20
+            c.drawString(100, y, f"Total: R$ {total:.2f}")
+            c.save()
+            buffer.seek(0)
+
+            st.success("Venda registrada com sucesso!")
+            st.download_button("📥 Baixar Comprovante PDF", buffer, file_name="comprovante.pdf")
+
+            # Limpa o carrinho após finalizar
+            st.session_state.carrinho = {}
+
+    else:
+        st.info("Carrinho vazio. Adicione produtos para iniciar a venda.")
 
 def pagina_cancelar_venda():
     st.subheader("❌ Cancelar Venda")
