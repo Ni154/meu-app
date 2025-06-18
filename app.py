@@ -94,7 +94,7 @@ with st.sidebar:
     if st.button("Aplicar cores"):
         st.session_state.cor_fundo = cor_fundo
         st.session_state.cor_menu = cor_menu
-        st.experimental_rerun()
+        st.rerun()
 
 def pagina_login():
     st.title("🍔 NS Lanches - Login")
