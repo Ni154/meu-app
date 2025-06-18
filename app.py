@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS usuarios (
 )
 """)
 cursor.execute("SELECT COUNT(*) FROM usuarios")
-if cursor.fetchone()[0] == 0:
+if cursor.fetchone()[[0]] == 0:
     cursor.execute("INSERT INTO usuarios (usuario, senha) VALUES (?, ?)", ("admin", "1234"))
     conn.commit()
 
@@ -128,34 +128,105 @@ def pagina_login():
     st.stop()
 
 # Página inicial
-
 def pagina_inicio():
     st.subheader("🍔 Bem-vindo ao sistema de vendas NS Lanches")
     st.write("Utilize o menu lateral para navegar entre as funcionalidades.")
 
 def pagina_empresa():
     st.subheader("🏢 Cadastro de Empresa")
-    # Conteúdo omitido para foco
+    nome = st.text_input("Nome da Empresa")
+    cnpj = st.text_input("CNPJ")
+    if st.button("Salvar Empresa"):
+        if nome and cnpj:
+            cursor.execute("INSERT INTO clientes (nome, cpf, telefone, endereco) VALUES (?, ?, ?, ?)", (nome, cnpj, "", ""))
+            conn.commit()
+            st.success("Empresa cadastrada com sucesso")
+        else:
+            st.warning("Preencha todos os campos.")
 
 def pagina_clientes():
     st.subheader("👥 Cadastro de Clientes")
-    # Conteúdo omitido para foco
+    nome = st.text_input("Nome do Cliente")
+    cpf = st.text_input("CPF")
+    telefone = st.text_input("Telefone")
+    endereco = st.text_area("Endereço")
+    if st.button("Cadastrar Cliente"):
+        if nome:
+            cursor.execute("INSERT INTO clientes (nome, cpf, telefone, endereco) VALUES (?, ?, ?, ?)", (nome, cpf, telefone, endereco))
+            conn.commit()
+            st.success("Cliente cadastrado com sucesso")
+        else:
+            st.warning("Informe o nome do cliente.")
 
 def pagina_produtos():
     st.subheader("🍟 Cadastro de Produtos")
-    # Conteúdo omitido para foco
+    nome = st.text_input("Nome do Produto")
+    preco = st.number_input("Preço", step=0.01)
+    estoque = st.number_input("Estoque", step=1)
+    unidade = st.selectbox("Unidade", ["Unidade", "Peso"])
+    categoria = st.text_input("Categoria")
+    if st.button("Cadastrar Produto"):
+        if nome:
+            data = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cursor.execute("INSERT INTO produtos (nome, preco, estoque, unidade, categoria, data) VALUES (?, ?, ?, ?, ?, ?)", (nome, preco, estoque, unidade, categoria, data))
+            conn.commit()
+            st.success("Produto cadastrado com sucesso")
+        else:
+            st.warning("Informe o nome do produto.")
 
 def pagina_vendas():
     st.subheader("🧾 Registrar Venda")
-    # Conteúdo omitido para foco
+    clientes = [row[0] for row in cursor.execute("SELECT nome FROM clientes").fetchall()]
+    produtos = cursor.execute("SELECT nome, preco, estoque FROM produtos").fetchall()
+    if clientes and produtos:
+        cliente = st.selectbox("Cliente", clientes)
+        produto_nome = st.selectbox("Produto", [p[0] for p in produtos])
+        quantidade = st.number_input("Quantidade", min_value=1, step=1)
+        produto_info = next(p for p in produtos if p[0] == produto_nome)
+        preco_unit = produto_info[1]
+        estoque = produto_info[2]
+        total = preco_unit * quantidade
+        st.write(f"Total: R$ {total:.2f}")
+        if quantidade > estoque:
+            st.warning("Estoque insuficiente.")
+        if st.button("Finalizar Venda"):
+            if quantidade <= estoque:
+                pedido_id = str(uuid.uuid4())[:8]
+                data = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                cursor.execute("INSERT INTO vendas (data, produto, cliente, quantidade, total, pedido_id) VALUES (?, ?, ?, ?, ?, ?)", (data, produto_nome, cliente, quantidade, total, pedido_id))
+                cursor.execute("UPDATE produtos SET estoque = estoque - ? WHERE nome = ?", (quantidade, produto_nome))
+                conn.commit()
+                st.success("Venda registrada com sucesso!")
+            else:
+                st.error("Estoque insuficiente para completar a venda.")
+    else:
+        st.warning("Cadastre clientes e produtos primeiro.")
 
 def pagina_cancelar_venda():
     st.subheader("❌ Cancelar Venda")
-    # Conteúdo omitido para foco
+    vendas = cursor.execute("SELECT id, produto, cliente, quantidade, total FROM vendas WHERE status='Ativa'").fetchall()
+    if vendas:
+        venda_id = st.selectbox("Selecione a venda para cancelar", [f"ID {v[0]} - {v[1]} - {v[2]}" for v in vendas])
+        if st.button("Cancelar Venda"):
+            id_real = int(venda_id.split()[1])
+            cursor.execute("UPDATE vendas SET status='Cancelada' WHERE id=?", (id_real,))
+            conn.commit()
+            st.success("Venda cancelada.")
+    else:
+        st.info("Nenhuma venda ativa encontrada.")
 
 def pagina_relatorios():
-    st.subheader("📊 Relatórios")
-    # Conteúdo omitido para foco
+    st.subheader("📊 Relatórios de Vendas e Estoque")
+    df_vendas = pd.read_sql("SELECT * FROM vendas", conn)
+    df_produtos = pd.read_sql("SELECT * FROM produtos", conn)
+    st.write("### Relatório de Vendas")
+    st.dataframe(df_vendas)
+    st.write("### Gráfico de Vendas por Produto")
+    if not df_vendas.empty:
+        graf = px.bar(df_vendas, x="produto", y="total", color="cliente", title="Vendas por Produto")
+        st.plotly_chart(graf)
+    st.write("### Estoque Atual")
+    st.dataframe(df_produtos[["nome", "estoque", "categoria"]])
 
 # Executa login se necessário
 if not st.session_state.logado:
