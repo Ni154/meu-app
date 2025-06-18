@@ -439,7 +439,7 @@ with st.sidebar:
     st.markdown("---")
     if st.button("🚪 Sair"):
         st.session_state.logado = False
-        st.experimental_rerun()
+        st.rerun()
 
 pagina = st.session_state.get("pagina", "Início")
 if pagina == "Início":
