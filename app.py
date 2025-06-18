@@ -8,90 +8,124 @@ import pandas as pd
 import plotly.express as px
 import uuid
 
-# --- Banco de dados e inicialização ---
-
+# Conexao com banco de dados
 conn = sqlite3.connect("sistema.db", check_same_thread=False)
 cursor = conn.cursor()
 
-def inicializar_banco():
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS usuarios (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        usuario TEXT NOT NULL UNIQUE,
-        senha TEXT NOT NULL
-    )
-    """)
-    cursor.execute("SELECT COUNT(*) FROM usuarios")
-    if cursor.fetchone()[0] == 0:
-        cursor.execute("INSERT INTO usuarios (usuario, senha) VALUES (?, ?)", ("admin", "1234"))
-        conn.commit()
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS empresa (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nome TEXT,
-        cnpj TEXT
-    )
-    """)
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS clientes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nome TEXT NOT NULL,
-        cpf TEXT,
-        telefone TEXT,
-        endereco TEXT
-    )
-    """)
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS produtos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nome TEXT,
-        preco REAL,
-        estoque INTEGER,
-        unidade TEXT,
-        categoria TEXT,
-        data TEXT
-    )
-    """)
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS vendas (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        data TEXT,
-        produto TEXT,
-        cliente TEXT,
-        quantidade INTEGER,
-        total REAL,
-        status TEXT DEFAULT 'Ativa',
-        pedido_id TEXT
-    )
-    """)
+# Cria tabelas se não existirem
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS usuarios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario TEXT NOT NULL,
+    senha TEXT NOT NULL
+)
+""")
+cursor.execute("SELECT COUNT(*) FROM usuarios")
+if cursor.fetchone()[0] == 0:
+    cursor.execute("INSERT INTO usuarios (usuario, senha) VALUES (?, ?)", ("admin", "1234"))
     conn.commit()
 
-# --- Páginas ---
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS empresa (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT,
+    cnpj TEXT
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS clientes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL,
+    cpf TEXT,
+    telefone TEXT,
+    endereco TEXT
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS produtos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT,
+    preco REAL,
+    estoque INTEGER,
+    unidade TEXT,
+    categoria TEXT,
+    data TEXT
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS vendas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    data TEXT,
+    produto TEXT,
+    cliente TEXT,
+    quantidade INTEGER,
+    total REAL,
+    status TEXT DEFAULT 'Ativa',
+    pedido_id TEXT
+)
+""")
+conn.commit()
+
+if "logado" not in st.session_state:
+    st.session_state.logado = False
+if "cor_fundo" not in st.session_state:
+    st.session_state.cor_fundo = "#FFFFFF"
+if "cor_menu" not in st.session_state:
+    st.session_state.cor_menu = "#F9A825"
+if "pagina" not in st.session_state:
+    st.session_state.pagina = "Início"
+
+st.set_page_config(layout="wide", page_title="NS Lanches")
+st.markdown(f"""
+    <style>
+        .stApp {{ background-color: {st.session_state.cor_fundo}; }}
+        .css-1d391kg {{ background-color: {st.session_state.cor_menu}; }}
+    </style>
+""", unsafe_allow_html=True)
+
+with st.sidebar:
+    st.markdown("---")
+    st.subheader("⚙️ Configurações")
+    cor_fundo = st.color_picker("Cor do Fundo", st.session_state.cor_fundo)
+    cor_menu = st.color_picker("Cor do Menu Lateral", st.session_state.cor_menu)
+    if st.button("Aplicar cores"):
+        st.session_state.cor_fundo = cor_fundo
+        st.session_state.cor_menu = cor_menu
+        st.experimental_rerun()
 
 def pagina_login():
     st.title("🍔 NS Lanches - Login")
     usuario = st.text_input("Usuário")
     senha = st.text_input("Senha", type="password")
-    entrar = st.button("Entrar")
-
-    if entrar:
+    if st.button("Entrar"):
         cursor.execute("SELECT * FROM usuarios WHERE usuario=? AND senha=?", (usuario, senha))
         if cursor.fetchone():
             st.session_state.logado = True
             st.experimental_rerun()
         else:
             st.error("Usuário ou senha incorretos")
-
-    if not st.session_state.get("logado", False):
-        st.stop()
+    st.stop()
 
 def pagina_inicio():
-    st.subheader("🍔 Bem-vindo ao sistema de vendas NS Lanches")
-    st.write("Use o menu lateral para navegar entre as funcionalidades.")
+    st.subheader("📊 Painel Administrativo")
+    total_clientes = cursor.execute("SELECT COUNT(*) FROM clientes").fetchone()[0]
+    total_vendas = cursor.execute("SELECT SUM(total) FROM vendas WHERE status='Ativa'").fetchone()[0] or 0
+    produtos = cursor.execute("SELECT nome, estoque FROM produtos").fetchall()
+    produtos_negativos = [p[0] for p in produtos if p[1] <= 0]
+
+    col1, col2 = st.columns(2)
+    col1.metric("Total de Clientes", total_clientes)
+    col2.metric("Total em Vendas", f"R$ {total_vendas:.2f}")
+
+    if produtos_negativos:
+        st.warning("⚠️ Produtos com estoque esgotado:")
+        for p in produtos_negativos:
+            st.write(f"- {p}")
+    else:
+        st.success("Todos os produtos estão com estoque disponível.")
 
 def pagina_empresa():
     st.subheader("🏢 Cadastro de Empresa")
@@ -144,47 +178,48 @@ def pagina_vendas():
         return
 
     cliente = st.selectbox("Cliente", clientes)
-    produto = st.selectbox("Produto", [p[0] for p in produtos_info])
-    quantidade = st.number_input("Quantidade", min_value=1, step=1)
-
-    produto_sel = next(p for p in produtos_info if p[0] == produto)
-    preco = produto_sel[1]
-    estoque = produto_sel[2]
-
-    if quantidade > estoque:
-        st.warning("Quantidade maior que o estoque disponível")
-        return
+    produtos_selecionados = st.multiselect("Produtos", [p[0] for p in produtos_info])
+    quantidades = {}
+    total = 0
+    for prod in produtos_selecionados:
+        prod_info = next(p for p in produtos_info if p[0] == prod)
+        quantidade = st.number_input(f"Quantidade de {prod}", min_value=1, max_value=prod_info[2], step=1)
+        quantidades[prod] = quantidade
+        total += quantidade * prod_info[1]
 
     if st.button("Finalizar Venda"):
-        total = preco * quantidade
         data_venda = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         pedido_id = datetime.now().strftime("%Y%m%d%H%M%S") + str(uuid.uuid4())[:6]
-
-        cursor.execute("INSERT INTO vendas (data, produto, cliente, quantidade, total, pedido_id) VALUES (?, ?, ?, ?, ?, ?)",
-                       (data_venda, produto, cliente, quantidade, total, pedido_id))
-        cursor.execute("UPDATE produtos SET estoque = estoque - ? WHERE nome = ?", (quantidade, produto))
+        for produto, quantidade in quantidades.items():
+            preco_unit = next(p for p in produtos_info if p[0] == produto)[1]
+            total_produto = preco_unit * quantidade
+            cursor.execute("INSERT INTO vendas (data, produto, cliente, quantidade, total, pedido_id) VALUES (?, ?, ?, ?, ?, ?)", (data_venda, produto, cliente, quantidade, total_produto, pedido_id))
+            cursor.execute("UPDATE produtos SET estoque = estoque - ? WHERE nome = ?", (quantidade, produto))
         conn.commit()
 
         st.success("Venda registrada com sucesso!")
-
-        # Gerar comprovante PDF
         buffer = io.BytesIO()
         c = canvas.Canvas(buffer, pagesize=A4)
         c.drawString(100, 800, f"Comprovante - NS Lanches")
         c.drawString(100, 780, f"Data: {data_venda}")
         c.drawString(100, 760, f"Cliente: {cliente}")
-        c.drawString(100, 740, f"Produto: {produto}")
-        c.drawString(100, 720, f"Quantidade: {quantidade}")
-        c.drawString(100, 700, f"Total: R$ {total:.2f}")
+        y = 740
+        for produto, qtd in quantidades.items():
+            preco_unit = next(p for p in produtos_info if p[0] == produto)[1]
+            c.drawString(100, y, f"Produto: {produto} | Qtde: {qtd} | Unit: R$ {preco_unit:.2f}")
+            y -= 20
+        c.drawString(100, y, f"Total: R$ {total:.2f}")
         c.save()
         buffer.seek(0)
         st.download_button("📥 Baixar Comprovante PDF", buffer, file_name="comprovante.pdf")
 
 def pagina_cancelar_venda():
     st.subheader("❌ Cancelar Venda")
-    pedidos = cursor.execute("SELECT DISTINCT pedido_id FROM vendas WHERE status='Ativa'").fetchall()
-    if pedidos:
-        pedido_id = st.selectbox("Selecione um Pedido", [p[0] for p in pedidos])
+    vendas = cursor.execute("SELECT pedido_id, cliente, data, SUM(total) FROM vendas WHERE status='Ativa' GROUP BY pedido_id").fetchall()
+    if vendas:
+        pedidos = [f"{v[0]} | {v[1]} | {v[2]} | R$ {v[3]:.2f}" for v in vendas]
+        selecao = st.selectbox("Selecione uma venda para cancelar", pedidos)
+        pedido_id = selecao.split("|")[0].strip()
         if st.button("Cancelar Pedido"):
             cursor.execute("UPDATE vendas SET status='Cancelada' WHERE pedido_id=?", (pedido_id,))
             conn.commit()
@@ -201,7 +236,6 @@ def pagina_relatorios():
 
     df = pd.DataFrame(vendas, columns=["Data", "Produto", "Cliente", "Quantidade", "Total"])
     st.dataframe(df)
-
     st.plotly_chart(px.bar(df, x="Produto", y="Total", title="Vendas por Produto"))
     st.plotly_chart(px.bar(df, x="Cliente", y="Total", title="Vendas por Cliente"))
 
@@ -219,125 +253,38 @@ def pagina_relatorios():
     buffer.seek(0)
     st.download_button("📥 Baixar Relatório PDF", buffer, file_name="relatorio_vendas.pdf")
 
-def pagina_painel_admin():
-    st.subheader("🔧 Painel Administrativo - Gestão de Usuários e Indicadores")
+if not st.session_state.logado:
+    pagina_login()
 
-    # Indicadores gerais
-    total_clientes = cursor.execute("SELECT COUNT(*) FROM clientes").fetchone()[0]
-    total_estoque = cursor.execute("SELECT SUM(estoque) FROM produtos").fetchone()[0] or 0
-    total_vendas = cursor.execute("SELECT SUM(total) FROM vendas WHERE status='Ativa'").fetchone()[0] or 0
-
-    st.markdown(f"**Total de Clientes:** {total_clientes}")
-    st.markdown(f"**Total em Estoque:** {total_estoque}")
-    st.markdown(f"**Total de Vendas (R$):** {total_vendas:.2f}")
-
-    # Alertas de estoque negativo
-    produtos_negativos = cursor.execute("SELECT nome, estoque FROM produtos WHERE estoque < 0").fetchall()
-    if produtos_negativos:
-        st.warning("⚠️ Produtos com estoque negativo:")
-        for p in produtos_negativos:
-            st.write(f"- {p[0]}: {p[1]} unidades")
-    else:
-        st.success("Nenhum produto com estoque negativo.")
-
-    st.write("---")
-
-    # Gestão de usuários
-    st.subheader("👤 Gestão de Usuários")
-
-    usuarios = cursor.execute("SELECT id, usuario FROM usuarios ORDER BY id").fetchall()
-    df_usuarios = pd.DataFrame(usuarios, columns=["ID", "Usuário"])
-    st.dataframe(df_usuarios)
-
-    with st.form("form_novo_usuario"):
-        st.write("Adicionar Novo Usuário")
-        novo_usuario = st.text_input("Usuário")
-        nova_senha = st.text_input("Senha", type="password")
-        submit = st.form_submit_button("Adicionar")
-        if submit:
-            if novo_usuario and nova_senha:
-                try:
-                    cursor.execute("INSERT INTO usuarios (usuario, senha) VALUES (?, ?)", (novo_usuario, nova_senha))
-                    conn.commit()
-                    st.success(f"Usuário '{novo_usuario}' adicionado com sucesso.")
-                    st.experimental_rerun()
-                except sqlite3.IntegrityError:
-                    st.error("Usuário já existe.")
-            else:
-                st.warning("Preencha todos os campos.")
-
-    st.write("---")
-    st.write("Excluir Usuário")
-    usuarios_dict = {u[1]: u[0] for u in usuarios if u[1] != "admin"}  # não pode excluir admin
-    if usuarios_dict:
-        usuario_excluir = st.selectbox("Selecione o usuário para excluir", options=list(usuarios_dict.keys()))
-        if st.button("Excluir"):
-            cursor.execute("DELETE FROM usuarios WHERE id=?", (usuarios_dict[usuario_excluir],))
-            conn.commit()
-            st.success(f"Usuário '{usuario_excluir}' excluído.")
-            st.experimental_rerun()
-    else:
-        st.info("Nenhum usuário para excluir (exceto admin).")
-
-# --- Menu lateral e navegação ---
-
-def menu_lateral():
-    st.sidebar.title("🍟 NS Lanches")
-    if st.sidebar.button("Início"):
+with st.sidebar:
+    st.title("🍟 NS Lanches")
+    if st.button("Início"):
         st.session_state.pagina = "Início"
-    if st.sidebar.button("Empresa"):
+    if st.button("Empresa"):
         st.session_state.pagina = "Empresa"
-    if st.sidebar.button("Clientes"):
+    if st.button("Clientes"):
         st.session_state.pagina = "Clientes"
-    if st.sidebar.button("Produtos"):
+    if st.button("Produtos"):
         st.session_state.pagina = "Produtos"
-    if st.sidebar.button("Vendas"):
+    if st.button("Vendas"):
         st.session_state.pagina = "Vendas"
-    if st.sidebar.button("Cancelar Venda"):
+    if st.button("Cancelar Venda"):
         st.session_state.pagina = "Cancelar Venda"
-    if st.sidebar.button("Relatórios"):
+    if st.button("Relatórios"):
         st.session_state.pagina = "Relatórios"
-    if st.sidebar.button("Painel Administrativo"):
-        st.session_state.pagina = "Painel Administrativo"
-    if st.sidebar.button("Sair"):
-        st.session_state.logado = False
-        st.experimental_rerun()
 
-# --- App principal ---
-
-def main():
-    inicializar_banco()
-
-    if "logado" not in st.session_state:
-        st.session_state.logado = False
-    if "pagina" not in st.session_state:
-        st.session_state.pagina = "Início"
-
-    if not st.session_state.logado:
-        pagina_login()
-    else:
-        menu_lateral()
-        pagina = st.session_state.pagina
-
-        if pagina == "Início":
-            pagina_inicio()
-        elif pagina == "Empresa":
-            pagina_empresa()
-        elif pagina == "Clientes":
-            pagina_clientes()
-        elif pagina == "Produtos":
-            pagina_produtos()
-        elif pagina == "Vendas":
-            pagina_vendas()
-        elif pagina == "Cancelar Venda":
-            pagina_cancelar_venda()
-        elif pagina == "Relatórios":
-            pagina_relatorios()
-        elif pagina == "Painel Administrativo":
-            pagina_painel_admin()
-        else:
-            st.write("Página não implementada.")
-
-if __name__ == "__main__":
-    st.set_page_config(layout="wide", page_title="NS Lanches")
-    main()
+pagina = st.session_state.get("pagina", "Início")
+if pagina == "Início":
+    pagina_inicio()
+elif pagina == "Empresa":
+    pagina_empresa()
+elif pagina == "Clientes":
+    pagina_clientes()
+elif pagina == "Produtos":
+    pagina_produtos()
+elif pagina == "Vendas":
+    pagina_vendas()
+elif pagina == "Cancelar Venda":
+    pagina_cancelar_venda()
+elif pagina == "Relatórios":
+    pagina_relatorios()
